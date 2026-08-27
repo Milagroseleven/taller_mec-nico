@@ -374,26 +374,33 @@ function maestro_() {
   const nFilas = hoja.getLastRow() - primera + 1;
   if (nFilas < 1) { _maestro = {}; return _maestro; }
 
-  // Una lectura por columna útil, en vez de arrastrar las 26 de la hoja.
-  function columna(idx) {
-    if (idx === -1) return null;
-    return hoja.getRange(primera, idx + 1, nFilas, 1).getValues();
+  // Una sola lectura del bloque de columnas que hace falta.
+  //
+  // Antes se leía columna a columna, cinco viajes al servidor. Cada viaje
+  // tiene un coste fijo que pesa mucho más que los datos en sí, así que
+  // sale más barato traer de una vez el bloque que va de la primera a la
+  // última columna útil, aunque arrastre alguna del medio que no se usa.
+  const usadas = [cols.matricula, cols.marca, cols.modelo, cols.anio, cols.km]
+    .filter(function (c) { return c !== -1; });
+  const desde = Math.min.apply(null, usadas);
+  const hasta = Math.max.apply(null, usadas);
+  const datos = hoja.getRange(primera, desde + 1, nFilas, hasta - desde + 1).getValues();
+
+  /** Valor de una columna del maestro dentro de la fila ya leída. */
+  function celda(fila, idx) {
+    return idx === -1 ? '' : fila[idx - desde];
   }
-  const cMat = columna(cols.matricula);
-  const cMar = columna(cols.marca);
-  const cMod = columna(cols.modelo);
-  const cAno = columna(cols.anio);
-  const cKm  = columna(cols.km);
 
   const mapa = {};
   for (var i = 0; i < nFilas; i++) {
-    const clave = normalizarMatricula_(cMat[i][0]);
+    const fila = datos[i];
+    const clave = normalizarMatricula_(celda(fila, cols.matricula));
     if (!clave) continue;
     mapa[clave] = {
-      marca:  cMar ? String(cMar[i][0] || '').trim() : '',
-      modelo: cMod ? String(cMod[i][0] || '').trim() : '',
-      anio:   cAno ? textoAnio_(cAno[i][0]) : '',
-      km:     cKm  ? textoKm_(cKm[i][0])    : ''
+      marca:  String(celda(fila, cols.marca)  || '').trim(),
+      modelo: String(celda(fila, cols.modelo) || '').trim(),
+      anio:   textoAnio_(celda(fila, cols.anio)),
+      km:     textoKm_(celda(fila, cols.km))
     };
   }
   _maestro = mapa;

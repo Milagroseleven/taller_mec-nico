@@ -65,7 +65,8 @@ genera el PDF del parte.
 - Al tocar una fila se despliega la lista completa de revisiones y el enlace a la
   foto.
 - **La tabla sale al instante y el maestro se cruza después.** Ese libro tiene 68
-  pestañas y casi 5.000 motos: sólo abrirlo tarda varios segundos, así que la
+  pestañas y casi 10 millones de celdas: sólo abrirlo son 1,6 s medidos, y Apps
+  Script es más lento que eso, así que la
   vista no lo espera. Primero pinta los partes y luego actualiza marca, modelo,
   año y km, que aparecen como «…» hasta que llegan.
 - **Año y Km salen siempre del maestro**, no del parte: son datos de la moto, no
