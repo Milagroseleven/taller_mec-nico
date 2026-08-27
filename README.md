@@ -163,16 +163,17 @@ Encabezados en la **fila 5**: `Nº | Nombres | Sub área | Puesto | Sede | …`
 
 El rótulo `TALLER` que hay suelto más abajo es sólo decorativo: **lo que
 identifica a un mecánico es la columna `Sub área` con el valor `Taller`**. El
-código busca la fila de encabezados, filtra por esa columna y descarta a quien
-lleve `Supervisor` en el puesto.
+código busca la fila de encabezados, filtra por esa columna y descarta los
+puestos de `PUESTOS_EXCLUIDOS`: sólo firman partes quienes hacen la revisión con
+sus manos.
 
-Verificado contra la hoja real: **13 personas de taller**, con Álvaro Hernanseiz
-(Supervisor de taller) excluido. Repartidas en Madrid (8), Valencia (3) y
-Barcelona (2).
+Verificado contra la hoja real: de las 14 personas con sub área Taller quedan
+**12 mecánicos** en el desplegable — Madrid (7), Valencia (3) y Barcelona (2).
+Fuera se quedan el **Supervisor de taller** y el **Auxiliar de taller**.
 
-> Ojo: **Jhon Cruz entra en la lista como «Auxiliar de taller»**, porque la regla
-> acordada era excluir sólo al supervisor. Si tampoco debe firmar partes, se
-> añade `'auxiliar'` a `PUESTOS_EXCLUIDOS` en `Code.gs`.
+Para volver a incluir a alguno de esos puestos, o excluir otro, se edita
+`PUESTOS_EXCLUIDOS` en `Code.gs`; se compara por coincidencia parcial y sin
+acentos.
 
 La **Sede** viene abreviada y se traduce sola: `Bar` → Barcelona, `Mad` →
 Madrid, `Val` → Valencia, `Sev` → Sevilla. Si alguna no se reconoce, el mecánico

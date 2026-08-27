@@ -79,8 +79,11 @@ const COLS_MECANICOS = {
 /** Valor de "Sub área" que identifica a la gente de taller. */
 const SUBAREA_TALLER = 'taller';
 
-/** Puestos que quedan fuera del desplegable aunque estén en Taller. */
-const PUESTOS_EXCLUIDOS = ['supervisor'];
+/**
+ * Puestos que quedan fuera del desplegable aunque su sub área sea Taller:
+ * sólo firman partes quienes hacen la revisión con sus manos.
+ */
+const PUESTOS_EXCLUIDOS = ['supervisor', 'auxiliar'];
 
 const CABECERA_PARTES = [
   'ID', 'Timestamp', 'Fecha término', 'Matrícula', 'Marca', 'Modelo', 'Año',
