@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <?!= include('Estilos') ?>
+</head>
+<body>
+<div class="wrap ancho">
+
+  <div class="card">
+    <h1>Estado de motos</h1>
+    <p class="sub">Todas las revisiones de taller, de la más reciente a la más antigua.
+      Toca una fila para ver el detalle.</p>
+
+    <div class="barra">
+      <input type="text" id="buscador"
+             placeholder="Buscar por matrícula, marca, modelo, responsable o sede…"
+             autocomplete="off">
+      <button class="mini" id="btnLimpiar">Limpiar filtros</button>
+      <button class="mini" id="btnRecargar">Actualizar</button>
+      <span class="contador" id="contador"></span>
+    </div>
+    <div id="avisoMaestro" class="aviso amarillo oculto"></div>
+  </div>
+
+  <div class="card" style="padding:0; overflow:hidden">
+    <div id="cargando" class="centro" style="padding:30px">
+      <div class="cargador"></div>
+      <p class="sub" style="margin:0">Cargando partes…</p>
+    </div>
+
+    <div id="error" class="aviso rojo oculto" style="margin:16px"></div>
+
+    <div class="tabla-scroll oculto" id="cajaTabla">
+      <table class="partes">
+        <thead>
+          <tr id="cabecera"></tr>
+        </thead>
+        <tbody id="cuerpo"></tbody>
+      </table>
+    </div>
+
+    <div id="vacio" class="vacio oculto">No hay partes que coincidan con la búsqueda.</div>
+  </div>
+
+  <span class="enlace-suelto" id="linkForm">Ir al formulario del mecánico</span>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // Va con <?!= ?> porque <?= ?> escaparía las comillas y rompería el script.
+  // El servidor ya ha dejado el valor en sólo letras, números y espacios.
+  var MATRICULA_INICIAL = <?!= JSON.stringify(matriculaInicial) ?>;
+
+  /**
+   * Columnas de la tabla. `filtro` indica si el encabezado lleva
+   * desplegable; `buscar` si el campo entra en el buscador general.
+   */
+  var COLUMNAS = [
+    { clave: 'matricula',  titulo: 'Matrícula',   filtro: true,  buscar: true,  clase: 'mat' },
+    { clave: 'marca',      titulo: 'Marca',       filtro: true,  buscar: true },
+    { clave: 'modelo',     titulo: 'Modelo',      filtro: true,  buscar: true },
+    { clave: 'anio',       titulo: 'Año',         filtro: true,  buscar: false },
+    { clave: 'km',         titulo: 'Km',          filtro: false, buscar: false },
+    { clave: 'estado',     titulo: 'Estado',      filtro: true,  buscar: false },
+    { clave: 'sede',       titulo: 'Sede',        filtro: true,  buscar: true },
+    { clave: 'mecanico',   titulo: 'Responsable', filtro: true,  buscar: true },
+    { clave: 'fecha',      titulo: 'Fecha',       filtro: false, buscar: false }
+  ];
+
+  var TODOS = [];
+  var filtros = {};
+  var abierta = null;
+  var urlForm = '';
+
+  function el(id) { return document.getElementById(id); }
+
+  function escapar(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function sinAcentos(s) {
+    return String(s == null ? '' : s).toLowerCase()
+      .normalize('NFD').replace(/[^ -~]/g, '');
+  }
+
+  // -------------------------------------------------------------------
+  // Carga
+  // -------------------------------------------------------------------
+  function cargar() {
+    el('cargando').classList.remove('oculto');
+    el('cajaTabla').classList.add('oculto');
+    el('vacio').classList.add('oculto');
+    el('error').classList.add('oculto');
+
+    google.script.run
+      .withSuccessHandler(alCargar)
+      .withFailureHandler(function (err) {
+        alCargar({ ok: false, error: err && err.message ? err.message : String(err) });
+      })
+      .listarPartes();
+  }
+
+  function alCargar(r) {
+    el('cargando').classList.add('oculto');
+
+    if (!r || !r.ok) {
+      var caja = el('error');
+      caja.textContent = (r && r.error) || 'No se han podido cargar los partes.';
+      caja.classList.remove('oculto');
+      return;
+    }
+
+    TODOS = r.filas || [];
+    urlForm = r.urlForm || '';
+
+    if (r.aviso) {
+      el('avisoMaestro').textContent =
+        'No se ha podido leer el maestro de motos, así que marca, modelo, año y km ' +
+        'pueden estar incompletos. Detalle: ' + r.aviso;
+      el('avisoMaestro').classList.remove('oculto');
+    }
+
+    construirCabecera();
+    pintar();
+  }
+
+  // -------------------------------------------------------------------
+  // Cabecera con desplegables de filtro
+  // -------------------------------------------------------------------
+  function construirCabecera() {
+    var tr = el('cabecera');
+    tr.innerHTML = '';
+
+    COLUMNAS.forEach(function (col) {
+      var th = document.createElement('th');
+      var t = document.createElement('div');
+      t.textContent = col.titulo;
+      th.appendChild(t);
+
+      if (col.filtro) {
+        var sel = document.createElement('select');
+        sel.setAttribute('data-col', col.clave);
+        rellenarOpciones(sel, col.clave);
+        sel.onchange = function () {
+          var v = this.value;
+          if (v) filtros[col.clave] = v; else delete filtros[col.clave];
+          pintar();
+        };
+        th.appendChild(sel);
+      }
+      tr.appendChild(th);
+    });
+
+    var thAcc = document.createElement('th');
+    thAcc.textContent = 'Hoja de taller';
+    tr.appendChild(thAcc);
+  }
+
+  function rellenarOpciones(sel, clave) {
+    var vistos = {};
+    TODOS.forEach(function (f) {
+      var v = f[clave];
+      if (v) vistos[v] = true;
+    });
+    var valores = Object.keys(vistos).sort(function (a, b) {
+      return a.localeCompare(b, 'es', { numeric: true });
+    });
+
+    sel.innerHTML = '';
+    var todo = document.createElement('option');
+    todo.value = '';
+    todo.textContent = 'Todos';
+    sel.appendChild(todo);
+
+    valores.forEach(function (v) {
+      var o = document.createElement('option');
+      o.value = v; o.textContent = v;
+      sel.appendChild(o);
+    });
+
+    if (filtros[clave]) sel.value = filtros[clave];
+  }
+
+  // -------------------------------------------------------------------
+  // Pintado
+  // -------------------------------------------------------------------
+  function visibles() {
+    var texto = sinAcentos(el('buscador').value.trim());
+    var claves = Object.keys(filtros);
+
+    return TODOS.filter(function (f) {
+      for (var i = 0; i < claves.length; i++) {
+        if (f[claves[i]] !== filtros[claves[i]]) return false;
+      }
+      if (!texto) return true;
+      return COLUMNAS.some(function (c) {
+        return c.buscar && sinAcentos(f[c.clave]).indexOf(texto) !== -1;
+      });
+    });
+  }
+
+  function pintar() {
+    var filas = visibles();
+    var cuerpo = el('cuerpo');
+    cuerpo.innerHTML = '';
+
+    el('contador').textContent = filas.length +
+      (filas.length === 1 ? ' parte' : ' partes') +
+      (filas.length !== TODOS.length ? ' de ' + TODOS.length : '');
+
+    el('cajaTabla').classList.toggle('oculto', filas.length === 0);
+    el('vacio').classList.toggle('oculto', filas.length !== 0);
+
+    filas.forEach(function (f) {
+      var tr = document.createElement('tr');
+
+      COLUMNAS.forEach(function (col) {
+        var td = document.createElement('td');
+        var v = f[col.clave];
+
+        if (col.clave === 'estado') {
+          td.innerHTML = '<span class="chip ' + escapar(v) + '">' + escapar(v) + '</span>';
+        } else if (v === 'Ingreso pdte') {
+          td.innerHTML = '<span class="pdte">Ingreso pdte</span>';
+        } else {
+          td.textContent = v;
+          if (col.clase) td.className = col.clase;
+        }
+        tr.appendChild(td);
+      });
+
+      var tdBoton = document.createElement('td');
+      var boton = document.createElement('button');
+      boton.className = 'mini';
+      boton.textContent = 'Hoja de taller';
+      boton.onclick = function (ev) {
+        ev.stopPropagation();
+        descargarHoja(f.id, boton);
+      };
+      tdBoton.appendChild(boton);
+      tr.appendChild(tdBoton);
+
+      tr.onclick = function () { alternarDetalle(tr, f); };
+      cuerpo.appendChild(tr);
+    });
+  }
+
+  /** Despliega bajo la fila la lista de revisiones y el enlace a la foto. */
+  function alternarDetalle(tr, f) {
+    if (abierta && abierta.parentNode) {
+      var eraEsta = (abierta.previousSibling === tr);
+      abierta.parentNode.removeChild(abierta);
+      abierta = null;
+      if (eraEsta) return;
+    }
+
+    var fila = document.createElement('tr');
+    var td = document.createElement('td');
+    td.colSpan = COLUMNAS.length + 1;
+    td.style.background = '#f7f8fa';
+    td.style.whiteSpace = 'normal';
+
+    var html = '<div style="padding:6px 2px 10px">' +
+      '<b>Revisiones efectuadas (' + f.revisiones.length + ')</b>' +
+      '<ul class="revisiones" style="margin-top:8px">' +
+        f.revisiones.map(function (r, i) {
+          return '<li><span class="num">' + (i + 1) + '</span>' +
+                 '<span class="txt">' + escapar(r) + '</span></li>';
+        }).join('') +
+      '</ul>';
+
+    if (f.urlFoto) {
+      html += '<a href="' + escapar(f.urlFoto) + '" target="_blank" ' +
+              'style="font-size:14px">Ver foto de la moto</a>';
+    }
+    html += '</div>';
+
+    td.innerHTML = html;
+    fila.appendChild(td);
+
+    if (tr.nextSibling) tr.parentNode.insertBefore(fila, tr.nextSibling);
+    else tr.parentNode.appendChild(fila);
+    abierta = fila;
+  }
+
+  // -------------------------------------------------------------------
+  // Hoja de taller en PDF
+  // -------------------------------------------------------------------
+  function descargarHoja(id, boton) {
+    var original = boton.textContent;
+    boton.disabled = true;
+    boton.textContent = 'Generando…';
+
+    google.script.run
+      .withSuccessHandler(function (r) {
+        boton.disabled = false;
+        boton.textContent = original;
+        if (!r || !r.ok) {
+          alert((r && r.error) || 'No se ha podido generar la hoja de taller.');
+          return;
+        }
+        entregarPdf(r.nombre, r.base64);
+      })
+      .withFailureHandler(function (err) {
+        boton.disabled = false;
+        boton.textContent = original;
+        alert(err && err.message ? err.message : String(err));
+      })
+      .generarHojaTaller(id);
+  }
+
+  function entregarPdf(nombre, base64) {
+    var bin = atob(base64);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+
+    var blob = new Blob([bytes], { type: 'application/pdf' });
+    var url = URL.createObjectURL(blob);
+
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = nombre;
+    document.body.appendChild(a);
+    a.click();
+
+    // Si el navegador bloquea la descarga dentro del marco, se abre aparte.
+    setTimeout(function () {
+      try { window.open(url, '_blank'); } catch (e) {}
+      setTimeout(function () {
+        URL.revokeObjectURL(url);
+        if (a.parentNode) a.parentNode.removeChild(a);
+      }, 60000);
+    }, 800);
+  }
+
+  // -------------------------------------------------------------------
+  // Controles
+  // -------------------------------------------------------------------
+  el('buscador').addEventListener('input', pintar);
+
+  el('btnLimpiar').onclick = function () {
+    filtros = {};
+    el('buscador').value = '';
+    construirCabecera();
+    pintar();
+  };
+
+  el('btnRecargar').onclick = cargar;
+
+  el('linkForm').onclick = function () {
+    if (urlForm) window.open(urlForm, '_blank');
+  };
+
+  if (MATRICULA_INICIAL) el('buscador').value = MATRICULA_INICIAL;
+
+  cargar();
+})();
+</script>
+</body>
+</html>

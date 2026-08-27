@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <?!= include('Estilos') ?>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ---------- Carga inicial ---------- -->
+  <div id="pCarga" class="card centro">
+    <div class="cargador"></div>
+    <p class="sub" style="margin:0">Cargando…</p>
+  </div>
+
+  <!-- ---------- Error de configuración ---------- -->
+  <div id="pError" class="card oculto">
+    <h1>No se puede abrir el formulario</h1>
+    <div id="errorTexto" class="aviso rojo"></div>
+    <p class="hint">Avisa a administración con este mensaje.</p>
+  </div>
+
+  <!-- ---------- Identidad (sólo la primera vez) ---------- -->
+  <div id="pIdentidad" class="card oculto">
+    <h1>Revisiones de Taller</h1>
+    <p class="sub">Dinos quién eres y en qué sede trabajas. Sólo hay que hacerlo una vez:
+      el móvil lo recuerda para las siguientes motos.</p>
+
+    <label for="selMecanico">Mecánico <span class="req">*</span></label>
+    <select id="selMecanico"></select>
+
+    <label for="selSede">Sede <span class="req">*</span></label>
+    <select id="selSede"></select>
+
+    <div id="errIdentidad" class="aviso rojo oculto"></div>
+    <button id="btnIdentidad" class="primario">Empezar</button>
+  </div>
+
+  <!-- ---------- Formulario ---------- -->
+  <div id="pForm" class="card oculto">
+    <div class="identidad">
+      <span id="quienSoy"></span>
+      <span class="enlace" id="btnCambiar">cambiar</span>
+    </div>
+
+    <h1>Nueva revisión</h1>
+    <p class="sub">Registra la moto que acabas de revisar.</p>
+
+    <label for="matricula">Matrícula <span class="req">*</span></label>
+    <input type="text" id="matricula" class="mayus" placeholder="7083 MGF"
+           autocomplete="off" autocapitalize="characters" spellcheck="false">
+    <div id="avisoMaestro" class="aviso amarillo oculto"></div>
+    <div id="avisoPrevio" class="aviso azul oculto"></div>
+
+    <label for="marca">Marca</label>
+    <input type="text" id="marca" placeholder="Se rellena sola si la moto está en el maestro"
+           autocomplete="off">
+
+    <label for="modelo">Modelo <span class="req">*</span></label>
+    <input type="text" id="modelo" placeholder="Ej. MT-07" autocomplete="off">
+
+    <label>Revisiones efectuadas <span class="req">*</span></label>
+    <div class="rev-alta">
+      <input type="text" id="revTexto" placeholder="Ej. Cambio de aceite y filtro"
+             autocomplete="off">
+      <button type="button" id="btnAddRev">Añadir</button>
+    </div>
+    <p class="hint">Escribe una revisión y pulsa Enter o «Añadir». Repite para cada una.</p>
+    <ul class="revisiones" id="listaRev"></ul>
+
+    <label>Foto de la moto <span class="req">*</span></label>
+    <div class="foto-btns">
+      <div class="foto-btn" id="btnCamara">📷 Hacer foto</div>
+      <div class="foto-btn" id="btnArchivo">📎 Adjuntar</div>
+    </div>
+    <input type="file" id="fileCamara" accept="image/*" capture="environment">
+    <input type="file" id="fileArchivo" accept="image/*">
+    <div id="fotoPrevia"></div>
+
+    <label>Estado <span class="req">*</span></label>
+    <div class="estados" id="estados"></div>
+
+    <label for="fecha">Fecha término <span class="req">*</span></label>
+    <input type="date" id="fecha">
+
+    <div id="errForm" class="aviso rojo oculto"></div>
+    <button id="btnPrevia" class="primario">Vista previa</button>
+    <span class="enlace-suelto" id="linkEquipo1">Ver estado de motos</span>
+  </div>
+
+  <!-- ---------- Vista previa ---------- -->
+  <div id="pPrevia" class="card oculto">
+    <h1>Comprueba antes de guardar</h1>
+    <p class="sub">Si algo no está bien, pulsa «Editar».</p>
+    <div id="resumen"></div>
+    <div id="errPrevia" class="aviso rojo oculto"></div>
+    <button id="btnGuardar" class="primario">Guardar</button>
+    <button id="btnEditar" class="secundario">Editar</button>
+  </div>
+
+  <!-- ---------- Guardado ---------- -->
+  <div id="pOk" class="card centro oculto">
+    <div class="tick">✓</div>
+    <h1>Parte guardado</h1>
+    <p class="sub" id="okTexto"></p>
+    <button id="btnOtra" class="primario">Registrar otra moto</button>
+    <span class="enlace-suelto" id="linkEquipo2">Ver estado de motos</span>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var CFG = null;
+  var revisiones = [];
+  var foto = null;            // { nombre, tipo, datos, preview }
+  var estadoSel = '';
+  var datosMoto = null;       // última respuesta de consultarMatricula
+  var guardando = false;
+
+  var LS_MECANICO = 'taller.mecanico';
+  var LS_SEDE = 'taller.sede';
+
+  function el(id) { return document.getElementById(id); }
+  function ver(id) { el(id).classList.remove('oculto'); }
+  function esconder(id) { el(id).classList.add('oculto'); }
+
+  function pantalla(id) {
+    ['pCarga', 'pError', 'pIdentidad', 'pForm', 'pPrevia', 'pOk'].forEach(function (p) {
+      el(p).classList.toggle('oculto', p !== id);
+    });
+    window.scrollTo(0, 0);
+  }
+
+  function mostrarError(idCaja, texto) {
+    var caja = el(idCaja);
+    caja.textContent = texto;
+    caja.classList.remove('oculto');
+    caja.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  /** Guarda en el móvil, tolerando navegadores que bloquean el almacenamiento. */
+  function recordar(clave, valor) {
+    try { localStorage.setItem(clave, valor); } catch (e) {}
+  }
+  function recordado(clave) {
+    try { return localStorage.getItem(clave) || ''; } catch (e) { return ''; }
+  }
+
+  // -------------------------------------------------------------------
+  // Arranque
+  // -------------------------------------------------------------------
+  google.script.run
+    .withSuccessHandler(alArrancar)
+    .withFailureHandler(function (err) {
+      pantalla('pError');
+      el('errorTexto').textContent = err && err.message ? err.message : String(err);
+    })
+    .obtenerConfiguracionInicial();
+
+  function alArrancar(cfg) {
+    if (!cfg || !cfg.ok) {
+      pantalla('pError');
+      el('errorTexto').textContent = (cfg && cfg.error) || 'Error desconocido.';
+      return;
+    }
+    CFG = cfg;
+
+    var sel = el('selMecanico');
+    sel.innerHTML = '<option value="">Elige tu nombre…</option>';
+    cfg.mecanicos.forEach(function (m) {
+      var o = document.createElement('option');
+      o.value = m.nombre;
+      o.textContent = m.nombre;
+      o.setAttribute('data-sede', m.sede || '');
+      sel.appendChild(o);
+    });
+
+    var selS = el('selSede');
+    selS.innerHTML = '<option value="">Elige la sede…</option>';
+    cfg.sedes.forEach(function (s) {
+      var o = document.createElement('option');
+      o.value = s; o.textContent = s;
+      selS.appendChild(o);
+    });
+
+    pintarEstados(cfg.estados);
+    el('fecha').value = cfg.hoy;
+
+    el('linkEquipo1').onclick = irAEquipo;
+    el('linkEquipo2').onclick = irAEquipo;
+
+    var mec = recordado(LS_MECANICO);
+    var sede = recordado(LS_SEDE);
+    if (mec && sede) {
+      aplicarIdentidad(mec, sede);
+    } else {
+      pantalla('pIdentidad');
+    }
+  }
+
+  function irAEquipo() {
+    window.open(CFG.urlEquipo, '_blank');
+  }
+
+  function pintarEstados(estados) {
+    var cont = el('estados');
+    cont.innerHTML = '';
+    estados.forEach(function (e) {
+      var d = document.createElement('div');
+      d.className = 'estado-op';
+      d.textContent = e;
+      d.onclick = function () {
+        estadoSel = e;
+        Array.prototype.forEach.call(cont.children, function (c) {
+          c.classList.toggle('sel', c === d);
+        });
+      };
+      cont.appendChild(d);
+    });
+  }
+
+  // -------------------------------------------------------------------
+  // Identidad
+  // -------------------------------------------------------------------
+  el('selMecanico').onchange = function () {
+    // Si la hoja de mecánicos trae sede, se propone sola.
+    var op = this.options[this.selectedIndex];
+    var sede = op ? op.getAttribute('data-sede') : '';
+    if (sede && !el('selSede').value) el('selSede').value = sede;
+  };
+
+  el('btnIdentidad').onclick = function () {
+    var mec = el('selMecanico').value;
+    var sede = el('selSede').value;
+    if (!mec || !sede) {
+      mostrarError('errIdentidad', 'Elige tu nombre y tu sede para continuar.');
+      return;
+    }
+    esconder('errIdentidad');
+    recordar(LS_MECANICO, mec);
+    recordar(LS_SEDE, sede);
+    aplicarIdentidad(mec, sede);
+  };
+
+  function aplicarIdentidad(mec, sede) {
+    el('selMecanico').value = mec;
+    el('selSede').value = sede;
+    el('quienSoy').innerHTML = '<b>' + escapar(mec) + '</b> · ' + escapar(sede);
+    pantalla('pForm');
+  }
+
+  el('btnCambiar').onclick = function () {
+    esconder('errIdentidad');
+    pantalla('pIdentidad');
+  };
+
+  // -------------------------------------------------------------------
+  // Matrícula
+  // -------------------------------------------------------------------
+  var mat = el('matricula');
+
+  mat.addEventListener('input', function () {
+    this.value = this.value.toUpperCase();
+    datosMoto = null;
+  });
+
+  mat.addEventListener('blur', consultar);
+
+  function consultar() {
+    var v = mat.value.replace(/[^A-Za-z0-9]/g, '');
+    if (!v) { esconder('avisoMaestro'); esconder('avisoPrevio'); return; }
+
+    google.script.run
+      .withSuccessHandler(pintarConsulta)
+      .withFailureHandler(function () { /* silencioso: el mecánico puede seguir */ })
+      .consultarMatricula(v);
+  }
+
+  function pintarConsulta(r) {
+    if (!r || !r.ok) return;
+    datosMoto = r;
+    mat.value = r.matricula;
+
+    if (r.enMaestro) {
+      esconder('avisoMaestro');
+      if (r.marca && !el('marca').value) el('marca').value = r.marca;
+      if (r.modelo && !el('modelo').value) el('modelo').value = r.modelo;
+    } else {
+      el('avisoMaestro').textContent = 'Matrícula aún no ingresada en Maestro. Escribe el modelo.';
+      ver('avisoMaestro');
+    }
+
+    if (r.previo) {
+      var p = r.previo;
+      el('avisoPrevio').innerHTML =
+        'Esta moto ya pasó por taller · última vez ' + escapar(p.fecha) +
+        ' · ' + escapar(p.mecanico) +
+        '<br><span class="enlace" id="verPrevio">Ver registro previo</span>';
+      ver('avisoPrevio');
+      var enlace = el('verPrevio');
+      if (enlace) {
+        enlace.onclick = function () {
+          window.open(CFG.urlEquipo + '&m=' + encodeURIComponent(r.matricula), '_blank');
+        };
+      }
+    } else {
+      esconder('avisoPrevio');
+    }
+  }
+
+  // -------------------------------------------------------------------
+  // Lista de revisiones
+  // -------------------------------------------------------------------
+  function anadirRevision() {
+    var campo = el('revTexto');
+    var t = campo.value.trim();
+    if (!t) return;
+    revisiones.push(t);
+    campo.value = '';
+    campo.focus();
+    pintarRevisiones();
+  }
+
+  el('btnAddRev').onclick = anadirRevision;
+
+  el('revTexto').addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') { ev.preventDefault(); anadirRevision(); }
+  });
+
+  function pintarRevisiones() {
+    var ul = el('listaRev');
+    ul.innerHTML = '';
+    revisiones.forEach(function (r, i) {
+      var li = document.createElement('li');
+
+      var num = document.createElement('span');
+      num.className = 'num';
+      num.textContent = (i + 1);
+
+      var txt = document.createElement('span');
+      txt.className = 'txt';
+      txt.textContent = r;
+
+      var arriba = document.createElement('span');
+      arriba.className = 'mover';
+      arriba.textContent = '▲';
+      arriba.title = 'Subir';
+      arriba.onclick = function () {
+        if (i === 0) return;
+        var t = revisiones[i - 1];
+        revisiones[i - 1] = revisiones[i];
+        revisiones[i] = t;
+        pintarRevisiones();
+      };
+
+      var abajo = document.createElement('span');
+      abajo.className = 'mover';
+      abajo.textContent = '▼';
+      abajo.title = 'Bajar';
+      abajo.onclick = function () {
+        if (i === revisiones.length - 1) return;
+        var t = revisiones[i + 1];
+        revisiones[i + 1] = revisiones[i];
+        revisiones[i] = t;
+        pintarRevisiones();
+      };
+
+      var x = document.createElement('span');
+      x.className = 'quitar';
+      x.textContent = '✕';
+      x.title = 'Quitar';
+      x.onclick = function () {
+        revisiones.splice(i, 1);
+        pintarRevisiones();
+      };
+
+      li.appendChild(num);
+      li.appendChild(txt);
+      li.appendChild(arriba);
+      li.appendChild(abajo);
+      li.appendChild(x);
+      ul.appendChild(li);
+    });
+  }
+
+  // -------------------------------------------------------------------
+  // Foto
+  // -------------------------------------------------------------------
+  el('btnCamara').onclick = function () { el('fileCamara').click(); };
+  el('btnArchivo').onclick = function () { el('fileArchivo').click(); };
+  el('fileCamara').addEventListener('change', alElegirFoto);
+  el('fileArchivo').addEventListener('change', alElegirFoto);
+
+  function alElegirFoto(ev) {
+    var f = ev.target.files && ev.target.files[0];
+    if (!f) return;
+    comprimir(f, function (res) {
+      foto = res;
+      pintarFoto();
+    });
+  }
+
+  /**
+   * Las fotos de móvil pesan varios MB. Se reducen a 1600 px de lado y
+   * JPEG 82 % antes de enviarlas: sube mucho más rápido con cobertura de
+   * taller y la calidad sigue sobrando para la hoja de taller.
+   */
+  function comprimir(file, cb) {
+    var lector = new FileReader();
+    lector.onload = function (e) {
+      var dataUrl = e.target.result;
+      var img = new Image();
+
+      img.onload = function () {
+        var MAX = 1600;
+        var w = img.width, h = img.height;
+        if (w > MAX || h > MAX) {
+          if (w >= h) { h = Math.round(h * MAX / w); w = MAX; }
+          else { w = Math.round(w * MAX / h); h = MAX; }
+        }
+        var c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        var salida = c.toDataURL('image/jpeg', 0.82);
+        cb({
+          nombre: file.name || 'foto.jpg',
+          tipo: 'image/jpeg',
+          datos: salida.split(',')[1],
+          preview: salida
+        });
+      };
+
+      img.onerror = function () {
+        // Formato que el navegador no sabe dibujar (HEIC y similares):
+        // se sube tal cual, sin reducir.
+        cb({
+          nombre: file.name || 'foto',
+          tipo: file.type || 'image/jpeg',
+          datos: dataUrl.split(',')[1],
+          preview: ''
+        });
+      };
+
+      img.src = dataUrl;
+    };
+    lector.readAsDataURL(file);
+  }
+
+  function pintarFoto() {
+    var cont = el('fotoPrevia');
+    cont.innerHTML = '';
+    if (!foto) return;
+
+    var div = document.createElement('div');
+    div.className = 'foto-previa';
+
+    if (foto.preview) {
+      var img = document.createElement('img');
+      img.src = foto.preview;
+      div.appendChild(img);
+    } else {
+      var p = document.createElement('div');
+      p.className = 'aviso azul';
+      p.textContent = 'Foto adjunta: ' + foto.nombre;
+      div.appendChild(p);
+    }
+
+    var quitar = document.createElement('div');
+    quitar.className = 'quitar-foto';
+    quitar.textContent = 'Quitar';
+    quitar.onclick = function () {
+      foto = null;
+      el('fileCamara').value = '';
+      el('fileArchivo').value = '';
+      pintarFoto();
+    };
+    div.appendChild(quitar);
+
+    cont.appendChild(div);
+  }
+
+  // -------------------------------------------------------------------
+  // Vista previa
+  // -------------------------------------------------------------------
+  el('btnPrevia').onclick = function () {
+    esconder('errForm');
+    var fallo = validar();
+    if (fallo) { mostrarError('errForm', fallo); return; }
+    pintarResumen();
+    esconder('errPrevia');
+    pantalla('pPrevia');
+  };
+
+  function validar() {
+    if (!mat.value.replace(/[^A-Za-z0-9]/g, '')) return 'Escribe la matrícula.';
+    if (!el('modelo').value.trim()) return 'El modelo es obligatorio.';
+    if (!revisiones.length) return 'Añade al menos una revisión.';
+    if (!foto) return 'Adjunta la foto de la moto.';
+    if (!estadoSel) return 'Elige el estado.';
+    if (!el('fecha').value) return 'Indica la fecha de término.';
+    return '';
+  }
+
+  function fila(etiqueta, valor) {
+    return '<div class="resumen-fila"><span class="et">' + etiqueta +
+           '</span><span class="vl">' + escapar(valor || '—') + '</span></div>';
+  }
+
+  function pintarResumen() {
+    var f = el('fecha').value.split('-');
+    var fechaTexto = f.length === 3 ? (f[2] + '/' + f[1] + '/' + f[0]) : el('fecha').value;
+
+    var html =
+      '<div class="resumen-mat">' + escapar(mat.value) + '</div>' +
+      '<div class="resumen-sub">' +
+        escapar(el('marca').value || 'Sin marca') + ' · ' +
+        escapar(el('modelo').value) + '</div>' +
+      fila('Mecánico', recordado(LS_MECANICO)) +
+      fila('Sede', recordado(LS_SEDE)) +
+      fila('Estado', estadoSel) +
+      fila('Fecha término', fechaTexto) +
+      '<h2>Revisiones (' + revisiones.length + ')</h2>' +
+      '<ul class="revisiones">' +
+        revisiones.map(function (r, i) {
+          return '<li><span class="num">' + (i + 1) + '</span>' +
+                 '<span class="txt">' + escapar(r) + '</span></li>';
+        }).join('') +
+      '</ul>';
+
+    if (foto && foto.preview) {
+      html += '<h2>Foto</h2><div class="foto-previa"><img src="' + foto.preview + '"></div>';
+    } else if (foto) {
+      html += '<h2>Foto</h2><div class="aviso azul">' + escapar(foto.nombre) + '</div>';
+    }
+
+    el('resumen').innerHTML = html;
+  }
+
+  el('btnEditar').onclick = function () { pantalla('pForm'); };
+
+  // -------------------------------------------------------------------
+  // Guardar
+  // -------------------------------------------------------------------
+  el('btnGuardar').onclick = function () {
+    if (guardando) return;
+    guardando = true;
+    esconder('errPrevia');
+
+    var boton = el('btnGuardar');
+    boton.disabled = true;
+    boton.textContent = 'Guardando…';
+
+    google.script.run
+      .withSuccessHandler(alGuardar)
+      .withFailureHandler(function (err) {
+        alGuardar({ ok: false, error: err && err.message ? err.message : String(err) });
+      })
+      .guardarParte({
+        matricula: mat.value,
+        marca: el('marca').value.trim(),
+        modelo: el('modelo').value.trim(),
+        mecanico: recordado(LS_MECANICO),
+        sede: recordado(LS_SEDE),
+        estado: estadoSel,
+        fecha: el('fecha').value,
+        revisiones: revisiones,
+        foto: { nombre: foto.nombre, tipo: foto.tipo, datos: foto.datos }
+      });
+  };
+
+  function alGuardar(r) {
+    guardando = false;
+    var boton = el('btnGuardar');
+    boton.disabled = false;
+    boton.textContent = 'Guardar';
+
+    if (!r || !r.ok) {
+      mostrarError('errPrevia', (r && r.error) || 'No se ha podido guardar. Inténtalo otra vez.');
+      return;
+    }
+
+    el('okTexto').textContent = mat.value + ' · ' + revisiones.length +
+      (revisiones.length === 1 ? ' revisión registrada' : ' revisiones registradas');
+    el('linkEquipo2').onclick = function () {
+      window.open(r.urlEquipo, '_blank');
+    };
+    pantalla('pOk');
+  }
+
+  el('btnOtra').onclick = function () {
+    mat.value = '';
+    el('marca').value = '';
+    el('modelo').value = '';
+    el('revTexto').value = '';
+    el('fecha').value = CFG.hoy;
+    revisiones = [];
+    foto = null;
+    estadoSel = '';
+    datosMoto = null;
+    el('fileCamara').value = '';
+    el('fileArchivo').value = '';
+    Array.prototype.forEach.call(el('estados').children, function (c) {
+      c.classList.remove('sel');
+    });
+    pintarRevisiones();
+    pintarFoto();
+    esconder('avisoMaestro');
+    esconder('avisoPrevio');
+    esconder('errForm');
+    pantalla('pForm');
+    mat.focus();
+  };
+
+  function escapar(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+})();
+</script>
+</body>
+</html>
