@@ -267,6 +267,8 @@
     td.style.whiteSpace = 'normal';
 
     var html = '<div style="padding:6px 2px 10px">' +
+      (f.horario ? '<div class="detalle-horario">Horario: <b>' +
+                   escapar(f.horario) + '</b></div>' : '') +
       '<b>Revisiones efectuadas (' + f.revisiones.length + ')</b>' +
       '<ul class="revisiones" style="margin-top:8px">' +
         f.revisiones.map(function (r, i) {

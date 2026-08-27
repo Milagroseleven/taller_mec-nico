@@ -48,7 +48,9 @@ Fecha de revisión → Hora inicio/fin → **Vista previa** → *Guardar* / *Edi
 
 ### Estado de motos
 
-Listado de la más reciente a la más antigua con **Matrícula, Marca, Modelo, Año,
+La hoja `Partes` se reordena sola en cada alta, así que en el propio Google
+Sheet lo más reciente queda arriba. La vista de equipo hace lo mismo: listado de
+la más reciente a la más antigua con **Matrícula, Marca, Modelo, Año,
 Km, Estado, Sede, Responsable y Fecha**, más un botón **Hoja de taller** que
 genera el PDF del parte.
 
@@ -157,17 +159,22 @@ Modelo · Año · Sede · Mecánico · Estado · Revisiones · Nº revisiones ·
 
 ### Pestaña `Productividad`
 
-Se recalcula sola con cada parte:
+**Son fórmulas, no valores.** La pestaña se calcula sola sobre la hoja `Partes`:
+cambia en cuanto entra un parte nuevo, y también si alguien corrige uno a mano.
+No hay nada que actualizar ni ningún proceso que pueda quedarse atrás.
 
-1. **Motos por mecánico** — hoy, esta semana, semana pasada, últimos 30 días y total
-2. **Motos por sede y semana** — últimas 10 semanas
-3. **Promedio de revisiones por mecánico**
+1. **Motos por mecánico** — hoy · esta semana · semana pasada · últimos 30 días ·
+   total · revisiones totales · media de revisiones por moto
+2. **Motos por sede** — mismos periodos, para las cuatro sedes
+3. **Totales** — la fila de toda la empresa
 
-Si prefieres no recalcularla en cada alta, quita la llamada a
-`actualizarProductividad()` dentro de `guardarParte` y ponle un activador diario
-desde **Activadores** en el editor.
+La semana empieza en lunes. Los nombres de los mecánicos salen solos de los
+partes registrados, así que **sólo aparece quien tenga al menos un parte**: hay
+sitio reservado para 30, de sobra para los 12 actuales.
 
-### Fotos en Drive
+Son indicadores deliberadamente sencillos. Cuando exista el catálogo de
+revisiones se podrán cruzar por tipo de trabajo, que es donde está el jugo.
+
 
 ```
 7083 MGF - Revisión Taller - Completado - 2026-08-13.jpg

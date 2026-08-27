@@ -689,6 +689,11 @@ function guardarParte(d) {
 
     if (!d.foto || !d.foto.datos) throw new Error('Adjunta la foto de la moto.');
 
+    const horaInicio = textoHora_(d.horaInicio);
+    const horaFin = textoHora_(d.horaFin);
+    if (!horaInicio) throw new Error('Indica la hora de inicio.');
+    if (!horaFin) throw new Error('Indica la hora de fin.');
+
     const fecha = aFecha_(d.fecha) || new Date();
     const id = 'P' + Utilities.formatDate(new Date(), zonaHoraria_(), 'yyyyMMdd-HHmmss') +
                '-' + Math.floor(Math.random() * 900 + 100);
@@ -699,8 +704,8 @@ function guardarParte(d) {
     fila[P.id] = id;
     fila[P.timestamp] = new Date();
     fila[P.fecha] = fecha;
-    fila[P.horaInicio] = textoHora_(d.horaInicio);
-    fila[P.horaFin] = textoHora_(d.horaFin);
+    fila[P.horaInicio] = horaInicio;
+    fila[P.horaFin] = horaFin;
     fila[P.matricula] = formatearMatricula_(clave);
     fila[P.marca] = String(d.marca || '').trim();
     fila[P.modelo] = String(d.modelo || '').trim();
@@ -712,7 +717,19 @@ function guardarParte(d) {
     fila[P.nRevisiones] = revisiones.length;
     fila[P.urlFoto] = urlFoto;
 
-    hojaPartes_().appendRow(fila);
+    const h = hojaPartes_();
+    h.appendRow(fila);
+
+    // La hoja se deja siempre con lo más reciente arriba: la fila entra al
+    // final y se reordena por fecha de revisión y, a igualdad, por hora de
+    // alta. Es una sola llamada y evita tener que ordenar a mano al mirarla.
+    const n = h.getLastRow() - 1;
+    if (n > 1) {
+      h.getRange(2, 1, n, CABECERA_PARTES.length).sort([
+        { column: P.fecha + 1, ascending: false },
+        { column: P.timestamp + 1, ascending: false }
+      ]);
+    }
 
     return {
       ok: true,
@@ -727,19 +744,6 @@ function guardarParte(d) {
   }
 }
 
-/**
- * La llama el formulario en segundo plano justo después de guardar, cuando
- * el mecánico ya está viendo la confirmación. Nunca hace esperar a nadie.
- */
-function refrescarIndicadores() {
-  try {
-    actualizarProductividad();
-    return { ok: true };
-  } catch (err) {
-    console.error(err);
-    return { ok: false };
-  }
-}
 
 /**
  * Guarda la foto como "7083 MGF - Revisión Taller - Completado - 2026-08-13.jpg".
@@ -973,24 +977,17 @@ function htmlHojaTaller_(p, m) {
 // PRODUCTIVIDAD
 // ---------------------------------------------------------------------
 
-/** Lunes de la semana de esa fecha, a las 00:00. */
-function lunesDe_(d) {
-  const t = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const dia = (t.getDay() + 6) % 7;
-  t.setDate(t.getDate() - dia);
-  return t;
-}
-
-function etiquetaSemana_(lunes) {
-  const domingo = new Date(lunes.getTime());
-  domingo.setDate(domingo.getDate() + 6);
-  return Utilities.formatDate(lunes, zonaHoraria_(), 'dd/MM') + ' - ' +
-         Utilities.formatDate(domingo, zonaHoraria_(), 'dd/MM/yyyy');
-}
 
 /**
- * Rehace la pestaña de indicadores. Se llama tras cada parte, y también
- * se puede lanzar a mano desde el editor si hiciera falta.
+ * Deja la pestaña de indicadores montada **con fórmulas**, no con valores.
+ *
+ * Antes se recalculaba entera en cada parte, que era lento y dejaba los
+ * números viejos en cuanto alguien editaba la hoja a mano. Con fórmulas la
+ * pestaña se actualiza sola —también si se corrige un parte— y esta función
+ * sólo hace falta ejecutarla una vez, al instalar.
+ *
+ * Las fórmulas se escriben en sintaxis inglesa con comas: Apps Script las
+ * traduce solo a la configuración regional de la hoja.
  */
 function actualizarProductividad() {
   const ss = libro_();
@@ -998,110 +995,160 @@ function actualizarProductividad() {
   if (!h) h = ss.insertSheet(HOJA_PRODUCTIVIDAD);
   h.clear();
 
-  const partes = filasPartes_();
-  const hoy = new Date();
-  const hoyISO = fechaISO_(hoy);
-  const lunesEsta = lunesDe_(hoy);
-  const lunesPasada = new Date(lunesEsta.getTime());
-  lunesPasada.setDate(lunesPasada.getDate() - 7);
-  const hace30 = new Date(hoy.getTime() - 30 * 24 * 3600 * 1000);
+  // Letras de columna de la hoja de partes, para no contarlas a mano.
+  const cFecha = letraColumna_(P.fecha);
+  const cSede  = letraColumna_(P.sede);
+  const cMec   = letraColumna_(P.mecanico);
+  const cRev   = letraColumna_(P.nRevisiones);
+  const hoja   = "'" + HOJA_PARTES + "'!";
 
-  // --- Bloque 1: motos por mecánico -----------------------------------
-  const porMec = {};
-  partes.forEach(function (p) {
-    const k = p.mecanico || '(sin asignar)';
-    if (!porMec[k]) {
-      porMec[k] = { hoy: 0, semana: 0, pasada: 0, dias30: 0, total: 0, revisiones: 0 };
-    }
-    const r = porMec[k];
-    r.total++;
-    r.revisiones += p.nRevisiones;
-    if (fechaISO_(p.fecha) === hoyISO) r.hoy++;
-    if (p.fecha >= lunesEsta) r.semana++;
-    else if (p.fecha >= lunesPasada) r.pasada++;
-    if (p.fecha >= hace30) r.dias30++;
-  });
+  // Lunes de esta semana y de la pasada. WEEKDAY(...;3) da 0 en lunes.
+  const lunes = 'TODAY()-WEEKDAY(TODAY(),3)';
+  const lunesPasado = '(' + lunes + ')-7';
 
-  const mecs = Object.keys(porMec).sort(function (a, b) {
-    return porMec[b].total - porMec[a].total || a.localeCompare(b, 'es');
-  });
+  const filas = [];
+  const formatos = [];   // {fila, tipo} para dar estilo luego
 
-  const salida = [];
-  salida.push(['MOTOS POR MECÁNICO', '', '', '', '', '']);
-  salida.push(['Mecánico', 'Hoy', 'Esta semana', 'Semana pasada', 'Últimos 30 días', 'Total']);
-  if (!mecs.length) salida.push(['(todavía no hay partes)', '', '', '', '', '']);
-  mecs.forEach(function (k) {
-    const r = porMec[k];
-    salida.push([k, r.hoy, r.semana, r.pasada, r.dias30, r.total]);
-  });
-
-  // --- Bloque 2: motos por sede y semana ------------------------------
-  salida.push(['', '', '', '', '', '']);
-  salida.push(['MOTOS POR SEDE Y SEMANA', '', '', '', '', '']);
-  salida.push(['Semana'].concat(SEDES).concat(['Total']));
-
-  const porSemana = {};
-  partes.forEach(function (p) {
-    const clave = fechaISO_(lunesDe_(p.fecha));
-    if (!porSemana[clave]) porSemana[clave] = {};
-    const s = SEDES.indexOf(p.sede) !== -1 ? p.sede : 'Otras';
-    porSemana[clave][s] = (porSemana[clave][s] || 0) + 1;
-  });
-
-  const semanas = Object.keys(porSemana).sort().reverse().slice(0, 10);
-  if (!semanas.length) {
-    salida.push(['(todavía no hay partes)'].concat(SEDES.map(function () { return ''; })).concat(['']));
+  function titulo(texto) {
+    filas.push([texto, '', '', '', '', '', '', '']);
+    formatos.push({ fila: filas.length, tipo: 'titulo' });
   }
-  semanas.forEach(function (clave) {
-    const partesSem = porSemana[clave];
-    const fila = [etiquetaSemana_(aFecha_(clave))];
-    var total = 0;
-    SEDES.forEach(function (s) {
-      const n = partesSem[s] || 0;
-      total += n;
-      fila.push(n);
-    });
-    total += partesSem['Otras'] || 0;
-    fila.push(total);
-    salida.push(fila);
+  function cabecera(cols) {
+    while (cols.length < 8) cols.push('');
+    filas.push(cols);
+    formatos.push({ fila: filas.length, tipo: 'cabecera' });
+  }
+  function blanco() { filas.push(['', '', '', '', '', '', '', '']); }
+
+  // ------------------------------------------------------------------
+  // 1 · Motos por mecánico
+  // ------------------------------------------------------------------
+  titulo('MOTOS POR MECÁNICO');
+  cabecera(['Mecánico', 'Hoy', 'Esta semana', 'Semana pasada',
+            'Últimos 30 días', 'Total motos', 'Revisiones', 'Media revisiones']);
+
+  const filaMec = filas.length + 1;          // primera fila de datos
+
+  // La lista de nombres sale sola de los partes ya registrados.
+  filas.push([
+    '=IFERROR(SORT(UNIQUE(FILTER(' + hoja + cMec + '2:' + cMec + ',' +
+      hoja + cMec + '2:' + cMec + '<>""))),"")',
+    '', '', '', '', '', '', ''
+  ]);
+
+  // Hueco para que quepan los mecánicos que vayan apareciendo.
+  const HUECO_MEC = 29;
+  for (var i = 0; i < HUECO_MEC; i++) blanco();
+
+  for (var r = filaMec; r < filaMec + HUECO_MEC + 1; r++) {
+    const mec = '$A' + r;
+    const si = function (f) { return '=IF($A' + r + '="","",' + f + ')'; };
+    const cuenta = 'COUNTIF(' + hoja + cMec + ':' + cMec + ',' + mec + ')';
+    const suma = 'SUMIF(' + hoja + cMec + ':' + cMec + ',' + mec + ',' +
+                 hoja + cRev + ':' + cRev + ')';
+
+    filas[r - 1][1] = si('COUNTIFS(' + hoja + cMec + ':' + cMec + ',' + mec + ',' +
+      hoja + cFecha + ':' + cFecha + ',TODAY())');
+    filas[r - 1][2] = si('COUNTIFS(' + hoja + cMec + ':' + cMec + ',' + mec + ',' +
+      hoja + cFecha + ':' + cFecha + ',">="&' + lunes + ')');
+    filas[r - 1][3] = si('COUNTIFS(' + hoja + cMec + ':' + cMec + ',' + mec + ',' +
+      hoja + cFecha + ':' + cFecha + ',">="&' + lunesPasado + ',' +
+      hoja + cFecha + ':' + cFecha + ',"<"&' + lunes + ')');
+    filas[r - 1][4] = si('COUNTIFS(' + hoja + cMec + ':' + cMec + ',' + mec + ',' +
+      hoja + cFecha + ':' + cFecha + ',">="&TODAY()-30)');
+    filas[r - 1][5] = si(cuenta);
+    filas[r - 1][6] = si(suma);
+    filas[r - 1][7] = si('IFERROR(ROUND(' + suma + '/' + cuenta + ',1),0)');
+  }
+
+  // ------------------------------------------------------------------
+  // 2 · Motos por sede
+  // ------------------------------------------------------------------
+  blanco();
+  titulo('MOTOS POR SEDE');
+  cabecera(['Sede', 'Hoy', 'Esta semana', 'Semana pasada',
+            'Últimos 30 días', 'Total motos', '', '']);
+
+  SEDES.forEach(function (sede) {
+    const r = filas.length + 1;
+    const s = '$A' + r;
+    filas.push([
+      sede,
+      '=COUNTIFS(' + hoja + cSede + ':' + cSede + ',' + s + ',' +
+        hoja + cFecha + ':' + cFecha + ',TODAY())',
+      '=COUNTIFS(' + hoja + cSede + ':' + cSede + ',' + s + ',' +
+        hoja + cFecha + ':' + cFecha + ',">="&' + lunes + ')',
+      '=COUNTIFS(' + hoja + cSede + ':' + cSede + ',' + s + ',' +
+        hoja + cFecha + ':' + cFecha + ',">="&' + lunesPasado + ',' +
+        hoja + cFecha + ':' + cFecha + ',"<"&' + lunes + ')',
+      '=COUNTIFS(' + hoja + cSede + ':' + cSede + ',' + s + ',' +
+        hoja + cFecha + ':' + cFecha + ',">="&TODAY()-30)',
+      '=COUNTIF(' + hoja + cSede + ':' + cSede + ',' + s + ')',
+      '', ''
+    ]);
   });
 
-  // --- Bloque 3: promedio de revisiones por mecánico -------------------
-  salida.push(['', '', '', '', '', '']);
-  salida.push(['PROMEDIO DE REVISIONES POR MECÁNICO', '', '', '', '', '']);
-  salida.push(['Mecánico', 'Partes', 'Revisiones totales', 'Promedio por moto', '', '']);
-  if (!mecs.length) salida.push(['(todavía no hay partes)', '', '', '', '', '']);
-  mecs.forEach(function (k) {
-    const r = porMec[k];
-    const media = r.total ? Math.round((r.revisiones / r.total) * 10) / 10 : 0;
-    salida.push([k, r.total, r.revisiones, media, '', '']);
-  });
+  // ------------------------------------------------------------------
+  // 3 · Totales
+  // ------------------------------------------------------------------
+  blanco();
+  titulo('TOTALES');
+  cabecera(['', 'Hoy', 'Esta semana', 'Semana pasada',
+            'Últimos 30 días', 'Total motos', 'Revisiones', '']);
+  filas.push([
+    'Todas las sedes',
+    '=COUNTIF(' + hoja + cFecha + ':' + cFecha + ',TODAY())',
+    '=COUNTIF(' + hoja + cFecha + ':' + cFecha + ',">="&' + lunes + ')',
+    '=COUNTIFS(' + hoja + cFecha + ':' + cFecha + ',">="&' + lunesPasado + ',' +
+      hoja + cFecha + ':' + cFecha + ',"<"&' + lunes + ')',
+    '=COUNTIF(' + hoja + cFecha + ':' + cFecha + ',">="&TODAY()-30)',
+    '=COUNTA(' + hoja + 'A2:A)',
+    '=SUM(' + hoja + cRev + '2:' + cRev + ')',
+    ''
+  ]);
 
-  h.getRange(1, 1, salida.length, 6).setValues(salida);
+  h.getRange(1, 1, filas.length, 8).setValues(filas);
 
-  // Formato de los tres encabezados de bloque y de sus filas de columnas.
-  salida.forEach(function (fila, i) {
-    const texto = String(fila[0] || '');
-    const esTitulo = texto === texto.toUpperCase() && texto.length > 8 &&
-                     texto.indexOf('(') === -1;
-    if (esTitulo) {
-      h.getRange(i + 1, 1, 1, 6).merge()
+  // ------------------------------------------------------------------
+  // Formato
+  // ------------------------------------------------------------------
+  formatos.forEach(function (f) {
+    if (f.tipo === 'titulo') {
+      h.getRange(f.fila, 1, 1, 8).merge()
         .setFontWeight('bold').setFontColor('#ffffff').setBackground('#1f2a37');
-    } else if (['Mecánico', 'Semana'].indexOf(texto) !== -1) {
-      h.getRange(i + 1, 1, 1, 6).setFontWeight('bold').setBackground('#eef1f5');
+    } else {
+      h.getRange(f.fila, 1, 1, 8)
+        .setFontWeight('bold').setBackground('#eef1f5');
     }
   });
 
-  h.setColumnWidth(1, 220);
-  for (var c = 2; c <= 6; c++) h.setColumnWidth(c, 130);
-  h.getRange(1, 1, salida.length, 6).setVerticalAlignment('middle');
+  h.setColumnWidth(1, 210);
+  for (var c = 2; c <= 8; c++) h.setColumnWidth(c, 120);
+  h.getRange(1, 1, filas.length, 8).setVerticalAlignment('middle');
+  h.getRange(1, 2, filas.length, 7).setHorizontalAlignment('center');
+  h.setFrozenColumns(1);
 
-  const marca = h.getRange(salida.length + 2, 1);
-  marca.setValue('Actualizado el ' +
-    Utilities.formatDate(new Date(), zonaHoraria_(), "dd/MM/yyyy 'a las' HH:mm"));
-  marca.setFontColor('#9ca3af').setFontSize(9);
+  const nota = h.getRange(filas.length + 2, 1, 1, 8);
+  nota.merge().setValue(
+    'Esta pestaña se calcula sola con fórmulas sobre la hoja "' + HOJA_PARTES +
+    '". No hace falta actualizarla: cambia en cuanto entra o se corrige un parte. ' +
+    'La semana empieza en lunes.'
+  );
+  nota.setFontColor('#9ca3af').setFontSize(9).setWrap(true);
 
-  return 'Indicadores actualizados.';
+  return 'Indicadores montados con fórmulas.';
+}
+
+/** Índice de columna (base 0) a letra de Sheets: 0 -> A, 26 -> AA. */
+function letraColumna_(idx) {
+  var n = idx + 1;
+  var letra = '';
+  while (n > 0) {
+    var resto = (n - 1) % 26;
+    letra = String.fromCharCode(65 + resto) + letra;
+    n = Math.floor((n - 1) / 26);
+  }
+  return letra;
 }
 
 // ---------------------------------------------------------------------

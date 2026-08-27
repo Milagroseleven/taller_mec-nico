@@ -50,7 +50,7 @@
     <label for="matricula">Matrícula <span class="req">*</span></label>
     <input type="text" id="matricula" class="mayus" placeholder="Ej. 7083 MGF"
            autocomplete="off" autocapitalize="characters" spellcheck="false">
-    <p class="hint" id="hintMatricula">Al escribirla se buscan solos la marca y el modelo.</p>
+    <p class="hint" id="hintMatricula">Si la moto está registrada, la marca y el modelo se completarán automáticamente</p>
     <div id="avisoMaestro" class="aviso amarillo oculto"></div>
     <div id="avisoPrevio" class="aviso azul oculto"></div>
 
@@ -89,11 +89,11 @@
 
     <div class="horas">
       <div>
-        <label for="horaInicio">Hora de inicio <span class="opcional">Opcional</span></label>
+        <label for="horaInicio">Hora de inicio <span class="req">*</span></label>
         <input type="time" id="horaInicio">
       </div>
       <div>
-        <label for="horaFin">Hora de fin <span class="opcional">Opcional</span></label>
+        <label for="horaFin">Hora de fin <span class="req">*</span></label>
         <input type="time" id="horaFin">
       </div>
     </div>
@@ -311,6 +311,11 @@
     if (limpia.length >= 7) {
       temporizador = setTimeout(function () { consultar(limpia); }, 250);
     } else {
+      // Se olvida la última consultada. Si no, al borrar la matrícula y volver
+      // a escribir la misma, el guardado anti-repetición daba la consulta por
+      // hecha y ya no volvían a salir ni el aviso de moto repetida ni el de
+      // moto ausente del maestro.
+      ultimaConsultada = '';
       esconder('avisoMaestro');
       esconder('avisoPrevio');
       estadoConsulta('');
@@ -324,7 +329,7 @@
 
   function estadoConsulta(texto) {
     var h = el('hintMatricula');
-    h.textContent = texto || 'Al escribirla se buscan solos la marca y el modelo.';
+    h.textContent = texto || 'Si la moto está registrada, la marca y el modelo se completarán automáticamente';
     h.classList.toggle('buscando', texto === 'Buscando la moto…');
   }
 
@@ -571,7 +576,9 @@
     if (!el('fecha').value) return 'Indica la fecha de revisión.';
 
     var hi = el('horaInicio').value, hf = el('horaFin').value;
-    if (hi && hf && hf < hi) return 'La hora de fin es anterior a la de inicio.';
+    if (!hi) return 'Indica la hora de inicio.';
+    if (!hf) return 'Indica la hora de fin.';
+    if (hf < hi) return 'La hora de fin es anterior a la de inicio.';
     return '';
   }
 
@@ -601,7 +608,7 @@
       fila('Sede', recordado(LS_SEDE)) +
       fila('Estado', estadoSel) +
       fila('Fecha de revisión', fechaTexto) +
-      (textoHorario() ? fila('Horario', textoHorario()) : '') +
+      fila('Horario', textoHorario()) +
       '<h2>Revisiones (' + revisiones.length + ')</h2>' +
       '<ul class="revisiones">' +
         revisiones.map(function (r, i) {
@@ -673,11 +680,6 @@
       window.open(r.urlEquipo, '_blank');
     };
     pantalla('pOk');
-
-    // Los indicadores se rehacen ahora, con el mecánico ya viendo el "listo".
-    google.script.run
-      .withFailureHandler(function () {})
-      .refrescarIndicadores();
   }
 
   el('btnOtra').onclick = function () {
