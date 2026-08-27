@@ -252,4 +252,30 @@
 <style>
   .detalle-horario { font-size: 13.5px; color: #6b7280; margin-bottom: 10px; }
   .detalle-horario b { color: #1a1f27; }
+
+  /* Ficha de la moto encontrada en el maestro: sólo confirma lo que es, no
+     hay nada que rellenar. Los campos de marca y modelo únicamente aparecen
+     cuando la matrícula no está registrada. */
+  .ficha {
+    background: #f0fdf4;
+    border: 1px solid #bbe8c8;
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-top: 10px;
+  }
+  .ficha-modelo {
+    font-size: 16px;
+    font-weight: 700;
+    color: #14532d;
+  }
+  .ficha-modelo::before {
+    content: '✓ ';
+    color: #15803d;
+  }
+  .ficha-extra {
+    font-size: 13px;
+    color: #3f6b4d;
+    margin-top: 2px;
+  }
+  .ficha-extra:empty { display: none; }
 </style>

@@ -35,9 +35,11 @@ Fecha de revisión → Hora inicio/fin → **Vista previa** → *Guardar* / *Edi
 - **La matrícula se normaliza sola.** Llegan indistintamente como `7083 MGF` y
   como `8514LZB`; se guardan siempre igual para que el cruce con el maestro y el
   buscador no fallen.
-- **Si la moto está en el maestro**, marca y modelo se rellenan solos y siguen
-  siendo editables. **Si no está**, aparece la nota *«Matrícula aún no ingresada
-  en Maestro»*: el modelo pasa a ser obligatorio y la marca queda opcional.
+- **Si la moto está en el maestro**, no se pide nada: aparece una ficha verde de
+  confirmación con marca, modelo, año y km. No hay campos que rellenar.
+- **Si no está**, sale la nota *«Matrícula aún no está registrada en Maestro»* y
+  **sólo entonces** aparecen los campos de marca y modelo. El modelo es
+  obligatorio y la marca opcional.
 - **Si la moto ya pasó por taller**, sale un aviso con la última fecha y el
   mecánico que la atendió, y un enlace *Ver registro previo*. Nunca bloquea el
   alta.
