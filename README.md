@@ -59,73 +59,27 @@ genera el PDF del parte.
 
 ## Instalación
 
-### 1. Crear el Sheet de partes
+Los pasos detallados, con cada clic, están en **[INSTALACION.md](INSTALACION.md)**.
 
-Crea un Google Sheet nuevo (por ejemplo *Revisiones Taller*). Ahí se guardarán
-los partes y los indicadores. Apunta su ID: es el trozo largo de la URL.
+Resumen: pegar los cinco archivos en un proyecto de Apps Script colgado del Sheet
+de registro, ejecutar `prepararHojas` para crear las pestañas, ejecutar
+`diagnostico` para comprobar que lee bien las hojas, y publicar como aplicación
+web *ejecutando como tú* y con acceso para *cualquier usuario*.
 
-```
-docs.google.com/spreadsheets/d/ESTO_ES_EL_ID/edit
-```
-
-### 2. Crear el proyecto de Apps Script
-
-Desde ese Sheet: **Extensiones → Apps Script**. Luego crea los archivos y pega
-el contenido de este repositorio:
-
-| Archivo en Apps Script | Contenido |
-|---|---|
-| `Código.gs` | `Code.gs` |
-| `Index` (HTML) | `Index.html` |
-| `Equipo` (HTML) | `Equipo.html` |
-| `Estilos` (HTML) | `Estilos.html` |
-
-Los archivos HTML se crean con **+ → HTML** y sin escribir la extensión: Apps
-Script la añade sola.
-
-En **Configuración del proyecto** marca *Mostrar el archivo de manifiesto
-`appsscript.json`* y pega el contenido de `appsscript.json`.
-
-### 3. Configuración
+### Configuración
 
 Ya viene rellena con los recursos reales:
 
 | Constante | Apunta a |
 |---|---|
 | `HOJA_ID` | Sheet de registro donde se guardan los partes |
-| `MAESTRO_ID` + `MAESTRO_HOJA` | Pestaña **Maestro** del Sheet de personal y flota |
-| `MECANICOS_ID` + `MECANICOS_HOJA` | Pestaña **Vacaciones** del mismo Sheet |
+| `MAESTRO_ID` + `MAESTRO_HOJA` | Pestaña **Maestro** del libro *Maestro 2026* |
+| `MECANICOS_ID` + `MECANICOS_HOJA` | Pestaña **Vacaciones** del mismo libro |
 | `CARPETA_ID` | Carpeta de Drive para las fotos |
 | `LOGO_ID` | Vacío: el PDF imprime «MOTICK» en texto |
 
 Si alguno cambia de sitio, se sustituye ahí y ya está.
 
-### 4. Preparar las hojas
-
-En el editor, ejecuta la función **`prepararHojas`** una vez. Crea las pestañas
-`Partes` y `Productividad` con su formato. La primera ejecución pide autorizar
-los permisos.
-
-### 5. Desplegar
-
-**Implementar → Nueva implementación → Aplicación web**:
-
-- *Ejecutar como*: **Yo**
-- *Quién tiene acceso*: **Cualquier usuario**
-
-«Cualquier usuario» es lo que permite que los mecánicos entren sin cuenta de
-Google. Como se ejecuta con tu cuenta, las fotos van a tu Drive y los partes a
-tu Sheet independientemente de quién rellene el formulario.
-
-Copia la URL que termina en `/exec`. Esa es la del formulario; añadiéndole
-`?v=equipo` tienes la del estado de motos.
-
-### 6. Comprobar
-
-Ejecuta **`diagnostico`** en el editor. Escribe en el registro si encuentra el
-maestro, cuántas matrículas ha leído, cuántos mecánicos activos hay y si la
-carpeta de fotos está accesible. Es el primer sitio donde mirar cuando algo no
-cuadre.
 
 ---
 
@@ -242,6 +196,7 @@ Si la misma moto vuelve el mismo día y con el mismo estado, el archivo se numer
 ## Estructura del repositorio
 
 ```
+INSTALACION.md    Guía de instalación paso a paso
 Code.gs           Backend: configuración, lectura de Sheets, guardado, PDF, métricas
 Index.html        Formulario del mecánico
 Equipo.html       Estado de motos
