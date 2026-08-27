@@ -52,6 +52,14 @@ const ESTADOS = ['Pendiente', 'Completado', 'Incidencia', 'Mantenimiento'];
 
 const HOJA_PARTES = 'Partes';
 const HOJA_PRODUCTIVIDAD = 'Productividad';
+
+/**
+ * Separador de argumentos de las fórmulas: ',' o ';'. Vacío = se deduce de
+ * la configuración regional del libro, que es lo normal. La hoja está en
+ * es_ES, donde toca ';'.
+ */
+const SEPARADOR_FORMULAS = '';
+
 /**
  * Nombres aceptados para cada columna de los Sheets externos. Se comparan
  * sin acentos ni mayúsculas, así que no hace falta que coincidan exacto.
@@ -979,15 +987,32 @@ function htmlHojaTaller_(p, m) {
 
 
 /**
+ * Separador de argumentos que espera la hoja.
+ *
+ * En español —y en casi toda Europa— las fórmulas se escriben con `;`, no
+ * con `,`, y Apps Script **no** lo traduce al escribirlas con setValues: una
+ * fórmula con comas se queda en #ERROR!. Se mira la configuración regional
+ * del libro y se usa el separador que toque.
+ *
+ * Si alguna vez fallara, se puede forzar poniendo ',' o ';' en
+ * SEPARADOR_FORMULAS, arriba en la configuración.
+ */
+function separadorFormulas_(ss) {
+  if (SEPARADOR_FORMULAS) return SEPARADOR_FORMULAS;
+  const loc = norm_(ss.getSpreadsheetLocale()).replace('-', '_');
+  // Idiomas que usan la coma como separador de argumentos.
+  const conComa = ['en', 'ja', 'ko', 'zh', 'th', 'he', 'iw', 'ms', 'fil'];
+  const idioma = loc.split('_')[0];
+  return conComa.indexOf(idioma) !== -1 ? ',' : ';';
+}
+
+/**
  * Deja la pestaña de indicadores montada **con fórmulas**, no con valores.
  *
  * Antes se recalculaba entera en cada parte, que era lento y dejaba los
  * números viejos en cuanto alguien editaba la hoja a mano. Con fórmulas la
  * pestaña se actualiza sola —también si se corrige un parte— y esta función
  * sólo hace falta ejecutarla una vez, al instalar.
- *
- * Las fórmulas se escriben en sintaxis inglesa con comas: Apps Script las
- * traduce solo a la configuración regional de la hoja.
  */
 function actualizarProductividad() {
   const ss = libro_();
@@ -1000,6 +1025,8 @@ function actualizarProductividad() {
   h.clear();
   h.getRange(1, 1, h.getMaxRows(), h.getMaxColumns()).breakApart();
 
+  const S = separadorFormulas_(ss);
+
   // Letras de columna de la hoja de partes, para no contarlas a mano.
   const cFecha = letraColumna_(P.fecha);
   const cSede  = letraColumna_(P.sede);
@@ -1007,12 +1034,17 @@ function actualizarProductividad() {
   const cRev   = letraColumna_(P.nRevisiones);
   const hoja   = "'" + HOJA_PARTES + "'!";
 
+  const colFecha = hoja + cFecha + ':' + cFecha;
+  const colSede  = hoja + cSede + ':' + cSede;
+  const colMec   = hoja + cMec + ':' + cMec;
+  const colRev   = hoja + cRev + ':' + cRev;
+
   // Lunes de esta semana y de la pasada. WEEKDAY(...;3) da 0 en lunes.
-  const lunes = 'TODAY()-WEEKDAY(TODAY(),3)';
+  const lunes = 'TODAY()-WEEKDAY(TODAY()' + S + '3)';
   const lunesPasado = '(' + lunes + ')-7';
 
   const filas = [];
-  const formatos = [];   // {fila, tipo} para dar estilo luego
+  const formatos = [];
 
   function titulo(texto) {
     filas.push([texto, '', '', '', '', '', '', '']);
@@ -1025,6 +1057,23 @@ function actualizarProductividad() {
   }
   function blanco() { filas.push(['', '', '', '', '', '', '', '']); }
 
+  /** Cuenta partes de una columna igual a `valor`, con filtro de fechas. */
+  function cuentaSi(columna, valor, fechas) {
+    var f = 'COUNTIFS(' + columna + S + valor;
+    (fechas || []).forEach(function (c) { f += S + colFecha + S + c; });
+    return f + ')';
+  }
+
+  // Criterios de fecha de cada columna. Los partes guardan la fecha a las
+  // 00:00, así que para "hoy" basta la igualdad con TODAY().
+  const HOY = 0, ESTA_SEMANA = 1, SEMANA_PASADA = 2, DIAS_30 = 3;
+  const PERIODOS = [
+    ['TODAY()'],
+    ['">="&' + lunes],
+    ['">="&' + lunesPasado, '"<"&' + lunes],
+    ['">="&TODAY()-30']
+  ];
+
   // ------------------------------------------------------------------
   // 1 · Motos por mecánico
   // ------------------------------------------------------------------
@@ -1032,38 +1081,33 @@ function actualizarProductividad() {
   cabecera(['Mecánico', 'Hoy', 'Esta semana', 'Semana pasada',
             'Últimos 30 días', 'Total motos', 'Revisiones', 'Media revisiones']);
 
-  const filaMec = filas.length + 1;          // primera fila de datos
+  const filaMec = filas.length + 1;
 
   // La lista de nombres sale sola de los partes ya registrados.
   filas.push([
-    '=IFERROR(SORT(UNIQUE(FILTER(' + hoja + cMec + '2:' + cMec + ',' +
-      hoja + cMec + '2:' + cMec + '<>""))),"")',
+    '=IFERROR(SORT(UNIQUE(FILTER(' + hoja + cMec + '2:' + cMec + S +
+      hoja + cMec + '2:' + cMec + '<>"")))' + S + '"")',
     '', '', '', '', '', '', ''
   ]);
 
-  // Hueco para que quepan los mecánicos que vayan apareciendo.
   const HUECO_MEC = 29;
   for (var i = 0; i < HUECO_MEC; i++) blanco();
 
   for (var r = filaMec; r < filaMec + HUECO_MEC + 1; r++) {
     const mec = '$A' + r;
-    const si = function (f) { return '=IF($A' + r + '="","",' + f + ')'; };
-    const cuenta = 'COUNTIF(' + hoja + cMec + ':' + cMec + ',' + mec + ')';
-    const suma = 'SUMIF(' + hoja + cMec + ':' + cMec + ',' + mec + ',' +
-                 hoja + cRev + ':' + cRev + ')';
+    const si = function (f) {
+      return '=IF($A' + r + '=""' + S + '""' + S + f + ')';
+    };
+    const cuenta = 'COUNTIF(' + colMec + S + mec + ')';
+    const suma = 'SUMIF(' + colMec + S + mec + S + colRev + ')';
 
-    filas[r - 1][1] = si('COUNTIFS(' + hoja + cMec + ':' + cMec + ',' + mec + ',' +
-      hoja + cFecha + ':' + cFecha + ',TODAY())');
-    filas[r - 1][2] = si('COUNTIFS(' + hoja + cMec + ':' + cMec + ',' + mec + ',' +
-      hoja + cFecha + ':' + cFecha + ',">="&' + lunes + ')');
-    filas[r - 1][3] = si('COUNTIFS(' + hoja + cMec + ':' + cMec + ',' + mec + ',' +
-      hoja + cFecha + ':' + cFecha + ',">="&' + lunesPasado + ',' +
-      hoja + cFecha + ':' + cFecha + ',"<"&' + lunes + ')');
-    filas[r - 1][4] = si('COUNTIFS(' + hoja + cMec + ':' + cMec + ',' + mec + ',' +
-      hoja + cFecha + ':' + cFecha + ',">="&TODAY()-30)');
+    filas[r - 1][1] = si(cuentaSi(colMec, mec, PERIODOS[HOY]));
+    filas[r - 1][2] = si(cuentaSi(colMec, mec, PERIODOS[ESTA_SEMANA]));
+    filas[r - 1][3] = si(cuentaSi(colMec, mec, PERIODOS[SEMANA_PASADA]));
+    filas[r - 1][4] = si(cuentaSi(colMec, mec, PERIODOS[DIAS_30]));
     filas[r - 1][5] = si(cuenta);
     filas[r - 1][6] = si(suma);
-    filas[r - 1][7] = si('IFERROR(ROUND(' + suma + '/' + cuenta + ',1),0)');
+    filas[r - 1][7] = si('IFERROR(ROUND(' + suma + '/' + cuenta + S + '1)' + S + '0)');
   }
 
   // ------------------------------------------------------------------
@@ -1079,16 +1123,11 @@ function actualizarProductividad() {
     const s = '$A' + r;
     filas.push([
       sede,
-      '=COUNTIFS(' + hoja + cSede + ':' + cSede + ',' + s + ',' +
-        hoja + cFecha + ':' + cFecha + ',TODAY())',
-      '=COUNTIFS(' + hoja + cSede + ':' + cSede + ',' + s + ',' +
-        hoja + cFecha + ':' + cFecha + ',">="&' + lunes + ')',
-      '=COUNTIFS(' + hoja + cSede + ':' + cSede + ',' + s + ',' +
-        hoja + cFecha + ':' + cFecha + ',">="&' + lunesPasado + ',' +
-        hoja + cFecha + ':' + cFecha + ',"<"&' + lunes + ')',
-      '=COUNTIFS(' + hoja + cSede + ':' + cSede + ',' + s + ',' +
-        hoja + cFecha + ':' + cFecha + ',">="&TODAY()-30)',
-      '=COUNTIF(' + hoja + cSede + ':' + cSede + ',' + s + ')',
+      '=' + cuentaSi(colSede, s, PERIODOS[HOY]),
+      '=' + cuentaSi(colSede, s, PERIODOS[ESTA_SEMANA]),
+      '=' + cuentaSi(colSede, s, PERIODOS[SEMANA_PASADA]),
+      '=' + cuentaSi(colSede, s, PERIODOS[DIAS_30]),
+      '=COUNTIF(' + colSede + S + s + ')',
       '', ''
     ]);
   });
@@ -1102,13 +1141,13 @@ function actualizarProductividad() {
             'Últimos 30 días', 'Total motos', 'Revisiones', '']);
   filas.push([
     'Todas las sedes',
-    '=COUNTIF(' + hoja + cFecha + ':' + cFecha + ',TODAY())',
-    '=COUNTIF(' + hoja + cFecha + ':' + cFecha + ',">="&' + lunes + ')',
-    '=COUNTIFS(' + hoja + cFecha + ':' + cFecha + ',">="&' + lunesPasado + ',' +
-      hoja + cFecha + ':' + cFecha + ',"<"&' + lunes + ')',
-    '=COUNTIF(' + hoja + cFecha + ':' + cFecha + ',">="&TODAY()-30)',
+    '=COUNTIF(' + colFecha + S + 'TODAY())',
+    '=COUNTIF(' + colFecha + S + '">="&' + lunes + ')',
+    '=COUNTIFS(' + colFecha + S + '">="&' + lunesPasado + S +
+      colFecha + S + '"<"&' + lunes + ')',
+    '=COUNTIF(' + colFecha + S + '">="&TODAY()-30)',
     '=COUNTA(' + hoja + 'A2:A)',
-    '=SUM(' + hoja + cRev + '2:' + cRev + ')',
+    '=SUM(' + colRev + ')',
     ''
   ]);
 
@@ -1140,8 +1179,9 @@ function actualizarProductividad() {
   );
   nota.setFontColor('#9ca3af').setFontSize(9).setWrap(true);
 
-  return 'Indicadores montados con fórmulas.';
+  return 'Indicadores montados con fórmulas (separador "' + S + '").';
 }
+
 
 /** Índice de columna (base 0) a letra de Sheets: 0 -> A, 26 -> AA. */
 function letraColumna_(idx) {
