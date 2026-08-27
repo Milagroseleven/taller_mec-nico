@@ -51,8 +51,14 @@
 (function () {
   'use strict';
 
-  // Va con <?!= ?> porque <?= ?> escaparía las comillas y rompería el script.
-  // El servidor ya ha dejado el valor en sólo letras, números y espacios.
+  // Se imprime sin escapar, porque escapado convertiría las comillas en
+  // entidades HTML y rompería el script. El servidor ya ha dejado el valor
+  // en sólo letras, números y espacios.
+  //
+  // OJO al tocar esta zona: el motor de plantillas de Apps Script busca sus
+  // etiquetas en el HTML en crudo, sin saber qué es un comentario y qué no.
+  // Escribir una etiqueta de plantilla dentro de un comentario la compila
+  // igualmente, genera código roto y tumba la página entera.
   var MATRICULA_INICIAL = <?!= JSON.stringify(matriculaInicial) ?>;
 
   /**
