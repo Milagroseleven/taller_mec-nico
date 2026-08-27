@@ -77,6 +77,9 @@
     { clave: 'fecha',      titulo: 'Fecha',       filtro: false, buscar: false }
   ];
 
+  /** Mismo texto que usa el servidor cuando la moto no está en el maestro. */
+  var SIN_MAESTRO = 'Ingreso pdte';
+
   var TODOS = [];
   var filtros = {};
   var abierta = null;
@@ -125,15 +128,59 @@
     TODOS = r.filas || [];
     urlForm = r.urlForm || '';
 
-    if (r.aviso) {
-      el('avisoMaestro').textContent =
-        'No se ha podido leer el maestro de motos, así que marca, modelo, año y km ' +
-        'pueden estar incompletos. Detalle: ' + r.aviso;
-      el('avisoMaestro').classList.remove('oculto');
-    }
-
     construirCabecera();
     pintar();
+
+    // La tabla ya está en pantalla. Ahora se piden al maestro los datos de
+    // la moto (marca, modelo, año y km al día), que es la parte lenta.
+    completarConMaestro();
+  }
+
+  /**
+   * Segunda fase: cruza las matrículas que se están viendo con el maestro.
+   * Va aparte porque abrir ese libro tarda varios segundos y no tiene
+   * sentido que la tabla espere por ello.
+   */
+  function completarConMaestro() {
+    var matriculas = TODOS.map(function (f) { return f.matricula; });
+    if (!matriculas.length) return;
+
+    el('avisoMaestro').textContent = 'Actualizando datos de las motos desde el maestro…';
+    el('avisoMaestro').className = 'aviso azul';
+
+    google.script.run
+      .withSuccessHandler(function (r) {
+        if (!r || !r.ok) {
+          avisoMaestroFallido(r && r.error);
+          return;
+        }
+        var motos = r.motos || {};
+        TODOS.forEach(function (f) {
+          var m = motos[f.matricula.replace(/[^A-Za-z0-9]/g, '').toUpperCase()];
+          if (!m) { f.km = SIN_MAESTRO; return; }
+          if (m.marca) f.marca = m.marca;
+          if (m.modelo) f.modelo = m.modelo;
+          f.anio = m.anio || SIN_MAESTRO;
+          f.km = m.km || SIN_MAESTRO;
+        });
+        el('avisoMaestro').classList.add('oculto');
+        construirCabecera();
+        pintar();
+      })
+      .withFailureHandler(function (err) {
+        avisoMaestroFallido(err && err.message ? err.message : String(err));
+      })
+      .datosDeMaestro(matriculas);
+  }
+
+  function avisoMaestroFallido(detalle) {
+    TODOS.forEach(function (f) { if (!f.km) f.km = SIN_MAESTRO; });
+    pintar();
+    el('avisoMaestro').className = 'aviso amarillo';
+    el('avisoMaestro').textContent =
+      'No se ha podido leer el maestro, así que el año y los km pueden no estar ' +
+      'al día. El resto de la información es correcta.' +
+      (detalle ? ' Detalle: ' + detalle : '');
   }
 
   // -------------------------------------------------------------------
@@ -232,8 +279,11 @@
 
         if (col.clave === 'estado') {
           td.innerHTML = '<span class="chip ' + escapar(v) + '">' + escapar(v) + '</span>';
-        } else if (v === 'Ingreso pdte') {
-          td.innerHTML = '<span class="pdte">Ingreso pdte</span>';
+        } else if (!v) {
+          // Todavía no ha llegado del maestro.
+          td.innerHTML = '<span class="pdte">…</span>';
+        } else if (v === SIN_MAESTRO) {
+          td.innerHTML = '<span class="pdte">' + SIN_MAESTRO + '</span>';
         } else {
           td.textContent = v;
           if (col.clase) td.className = col.clase;

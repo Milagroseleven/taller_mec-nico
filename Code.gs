@@ -795,31 +795,28 @@ function extensionDe_(tipo, nombre) {
 // ---------------------------------------------------------------------
 
 /**
- * Listado completo para la vista de estado de motos, de la más reciente a
- * la más antigua. Marca, modelo, año y km se refrescan contra el maestro
- * en cada consulta: son datos de la moto, no del trabajo de aquel día.
+ * Listado para la vista de equipo, **sin tocar el maestro**.
+ *
+ * El maestro vive en un libro de 68 pestañas con casi 5.000 motos: sólo
+ * abrirlo ya tarda varios segundos. Si la tabla lo esperase, el equipo se
+ * quedaría mirando un "Cargando…" cada vez que abre la página.
+ *
+ * Así que aquí se devuelve lo que guarda el propio parte, que se lee al
+ * instante, y el cruce con el maestro lo pide la página después, con la
+ * tabla ya en pantalla (ver `datosDeMaestro`).
  */
 function listarPartes() {
   try {
-    var mm = {};
-    var avisoMaestro = '';
-    try {
-      mm = maestro_();
-    } catch (err) {
-      avisoMaestro = String(err && err.message ? err.message : err);
-    }
-
     const filas = filasPartes_().sort(ordenarRecientes_).map(function (p) {
-      const m = mm[p.matricula] || null;
       return {
         id: p.id,
         fecha: fechaCorta_(p.fecha),
         horario: horario_(p),
         matricula: formatearMatricula_(p.matricula),
-        marca:  (m && m.marca)  || p.marca  || SIN_MAESTRO,
-        modelo: (m && m.modelo) || p.modelo || SIN_MAESTRO,
-        anio:   (m && m.anio)   || p.anio   || SIN_MAESTRO,
-        km:     (m && m.km)     || SIN_MAESTRO,
+        marca:  p.marca  || SIN_MAESTRO,
+        modelo: p.modelo || SIN_MAESTRO,
+        anio:   p.anio   || SIN_MAESTRO,
+        km: '',                      // lo completa datosDeMaestro
         estado: p.estado,
         sede: p.sede,
         mecanico: p.mecanico,
@@ -829,7 +826,33 @@ function listarPartes() {
       };
     });
 
-    return { ok: true, filas: filas, aviso: avisoMaestro, urlForm: urlApp_() };
+    return { ok: true, filas: filas, urlForm: urlApp_() };
+  } catch (err) {
+    return { ok: false, error: String(err && err.message ? err.message : err) };
+  }
+}
+
+/**
+ * Segunda fase de la vista de equipo: marca, modelo, año y km al día para
+ * las matrículas que se están viendo.
+ *
+ * Devuelve sólo las pedidas, no el maestro entero, para que lo que viaja al
+ * navegador sea pequeño aunque la hoja tenga miles de motos.
+ */
+function datosDeMaestro(matriculas) {
+  try {
+    const pedidas = (matriculas || []).map(normalizarMatricula_)
+      .filter(function (m) { return m; });
+    if (!pedidas.length) return { ok: true, motos: {} };
+
+    const mm = maestro_();
+    const motos = {};
+    pedidas.forEach(function (clave) {
+      const m = mm[clave];
+      if (m) motos[clave] = m;
+    });
+
+    return { ok: true, motos: motos };
   } catch (err) {
     return { ok: false, error: String(err && err.message ? err.message : err) };
   }
