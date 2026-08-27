@@ -993,7 +993,12 @@ function actualizarProductividad() {
   const ss = libro_();
   var h = ss.getSheetByName(HOJA_PRODUCTIVIDAD);
   if (!h) h = ss.insertSheet(HOJA_PRODUCTIVIDAD);
+
+  // clear() borra contenido y formato pero NO deshace las celdas combinadas,
+  // así que hay que separarlas a mano o la segunda ejecución se encuentra con
+  // los títulos de bloque de la anterior todavía combinados.
   h.clear();
+  h.getRange(1, 1, h.getMaxRows(), h.getMaxColumns()).breakApart();
 
   // Letras de columna de la hoja de partes, para no contarlas a mano.
   const cFecha = letraColumna_(P.fecha);
@@ -1126,7 +1131,6 @@ function actualizarProductividad() {
   for (var c = 2; c <= 8; c++) h.setColumnWidth(c, 120);
   h.getRange(1, 1, filas.length, 8).setVerticalAlignment('middle');
   h.getRange(1, 2, filas.length, 7).setHorizontalAlignment('center');
-  h.setFrozenColumns(1);
 
   const nota = h.getRange(filas.length + 2, 1, 1, 8);
   nota.merge().setValue(
