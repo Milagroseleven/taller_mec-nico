@@ -52,25 +52,35 @@ const ESTADOS = ['Pendiente', 'Completado', 'Incidencia', 'Mantenimiento'];
 
 const HOJA_PARTES = 'Partes';
 const HOJA_PRODUCTIVIDAD = 'Productividad';
-
 /**
  * Nombres aceptados para cada columna de los Sheets externos. Se comparan
  * sin acentos ni mayúsculas, así que no hace falta que coincidan exacto.
- * Si tu maestro usa otro encabezado, añádelo a la lista correspondiente.
+ *
+ * Ninguna de las dos hojas tiene los encabezados en la primera fila: en el
+ * maestro están en la 4 y en Vacaciones en la 5, con títulos y bloques por
+ * encima. Por eso la fila de encabezados se busca, no se da por hecha.
  */
 const COLS_MAESTRO = {
   matricula: ['matricula', 'matriculas', 'placa', 'plate', 'matricula moto'],
   marca:     ['marca', 'brand', 'fabricante'],
   modelo:    ['modelo', 'model', 'modelo moto'],
-  anio:      ['ano', 'anio', 'year', 'ano matriculacion', 'fecha matriculacion'],
-  km:        ['km', 'kms', 'kilometros', 'kilometraje', 'km actuales']
+  anio:      ['fecha de matriculacion', 'fecha matriculacion', 'ano matriculacion',
+              'ano', 'anio', 'year'],
+  km:        ['kms', 'km', 'kilometros', 'kilometraje', 'km actuales']
 };
 
 const COLS_MECANICOS = {
-  nombre: ['nombre', 'mecanico', 'name', 'nombre mecanico', 'nombre y apellidos'],
-  sede:   ['sede', 'centro', 'delegacion', 'ciudad'],
-  activo: ['activo', 'active', 'alta', 'en activo']
+  nombre:  ['nombres', 'nombre', 'nombre y apellidos', 'trabajador', 'empleado'],
+  subarea: ['sub area', 'subarea', 'area', 'departamento', 'seccion', 'equipo'],
+  puesto:  ['puesto', 'cargo', 'categoria', 'funcion'],
+  sede:    ['sede', 'centro', 'delegacion', 'ciudad', 'oficina']
 };
+
+/** Valor de "Sub área" que identifica a la gente de taller. */
+const SUBAREA_TALLER = 'taller';
+
+/** Puestos que quedan fuera del desplegable aunque estén en Taller. */
+const PUESTOS_EXCLUIDOS = ['supervisor'];
 
 const CABECERA_PARTES = [
   'ID', 'Timestamp', 'Fecha término', 'Matrícula', 'Marca', 'Modelo', 'Año',
@@ -196,11 +206,32 @@ function urlApp_() {
 // ---------------------------------------------------------------------
 // LECTURA DE LOS SHEETS EXTERNOS
 // ---------------------------------------------------------------------
+/**
+ * Busca la fila de encabezados de una hoja: la primera de las `limite`
+ * primeras en la que se reconozca la columna `obligatoria`. Ninguna de
+ * las dos hojas que usamos tiene los encabezados en la fila 1.
+ *
+ * Devuelve { fila, cols } o null si no aparece.
+ */
+function buscarEncabezados_(datos, alias, obligatoria, limite) {
+  const tope = Math.min(datos.length, limite || 20);
+  for (var i = 0; i < tope; i++) {
+    const cols = mapearColumnas_(datos[i], alias);
+    if (cols[obligatoria] !== -1) return { fila: i, cols: cols };
+  }
+  return null;
+}
 
 /** Caché de una sola ejecución: el maestro se lee una vez por petición. */
 var _maestro = null;
 
-/** Devuelve { MATRICULANORMALIZADA: {marca, modelo, anio, km} }. */
+/**
+ * Devuelve { MATRICULANORMALIZADA: {marca, modelo, anio, km} }.
+ *
+ * El maestro tiene los encabezados en la fila 4 y ronda las 4.000 motos,
+ * así que sólo se leen las columnas que hacen falta en lugar de la hoja
+ * entera: la consulta de matrícula se hace en cada teclado del mecánico.
+ */
 function maestro_() {
   if (_maestro) return _maestro;
   if (!MAESTRO_ID) {
@@ -211,27 +242,42 @@ function maestro_() {
   if (!hoja) {
     throw new Error('No existe la pestaña "' + MAESTRO_HOJA + '" en el maestro de motos.');
   }
-  const datos = hoja.getDataRange().getValues();
-  if (datos.length < 2) { _maestro = {}; return _maestro; }
 
-  const cols = mapearColumnas_(datos[0], COLS_MAESTRO);
-  if (cols.matricula === -1) {
+  const cabeceras = hoja.getRange(1, 1, Math.min(hoja.getLastRow(), 20),
+                                  hoja.getLastColumn()).getValues();
+  const enc = buscarEncabezados_(cabeceras, COLS_MAESTRO, 'matricula', 20);
+  if (!enc) {
     throw new Error(
-      'En el maestro no encuentro la columna de matrícula. Encabezados leídos: ' +
-      datos[0].join(' | ') + '. Añade el nombre correcto a COLS_MAESTRO.matricula.'
+      'En la pestaña "' + MAESTRO_HOJA + '" no encuentro la fila de encabezados ' +
+      'con la columna de matrícula (he mirado las 20 primeras filas).'
     );
   }
 
+  const cols = enc.cols;
+  const primera = enc.fila + 2;                       // +1 por índice, +1 por saltar la cabecera
+  const nFilas = hoja.getLastRow() - primera + 1;
+  if (nFilas < 1) { _maestro = {}; return _maestro; }
+
+  // Una lectura por columna útil, en vez de arrastrar las 26 de la hoja.
+  function columna(idx) {
+    if (idx === -1) return null;
+    return hoja.getRange(primera, idx + 1, nFilas, 1).getValues();
+  }
+  const cMat = columna(cols.matricula);
+  const cMar = columna(cols.marca);
+  const cMod = columna(cols.modelo);
+  const cAno = columna(cols.anio);
+  const cKm  = columna(cols.km);
+
   const mapa = {};
-  for (var i = 1; i < datos.length; i++) {
-    const f = datos[i];
-    const clave = normalizarMatricula_(f[cols.matricula]);
+  for (var i = 0; i < nFilas; i++) {
+    const clave = normalizarMatricula_(cMat[i][0]);
     if (!clave) continue;
     mapa[clave] = {
-      marca:  cols.marca  === -1 ? '' : String(f[cols.marca]  || '').trim(),
-      modelo: cols.modelo === -1 ? '' : String(f[cols.modelo] || '').trim(),
-      anio:   cols.anio   === -1 ? '' : textoAnio_(f[cols.anio]),
-      km:     cols.km     === -1 ? '' : textoKm_(f[cols.km])
+      marca:  cMar ? String(cMar[i][0] || '').trim() : '',
+      modelo: cMod ? String(cMod[i][0] || '').trim() : '',
+      anio:   cAno ? textoAnio_(cAno[i][0]) : '',
+      km:     cKm  ? textoKm_(cKm[i][0])    : ''
     };
   }
   _maestro = mapa;
@@ -242,62 +288,50 @@ function textoAnio_(v) {
   if (v instanceof Date && !isNaN(v)) return String(v.getFullYear());
   const s = String(v == null ? '' : v).trim();
   const m = s.match(/(19|20)\d{2}/);
-  return m ? m[0] : s;
+  return m ? m[0] : '';
 }
 
 function textoKm_(v) {
   if (v === '' || v == null) return '';
   const n = Number(String(v).replace(/[^\d]/g, ''));
-  if (!n || isNaN(n)) return String(v).trim();
+  if (!n || isNaN(n)) return '';
   return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 }
 
 /**
- * Sólo se descarta un mecánico si la columna "Activo" dice explícitamente
- * que no lo está. Una celda vacía cuenta como activo, para que nadie
- * desaparezca del desplegable por un hueco en la hoja.
- */
-function esBaja_(v) {
-  const s = norm_(v);
-  return s === 'no' || s === 'false' || s === '0' || s === 'baja' || s === 'inactivo';
-}
-
-/**
- * La hoja guarda la sede abreviada. Se traduce a la forma larga que usan
- * los partes; si no se reconoce, se devuelve vacío y el mecánico elige.
+ * La hoja guarda la sede abreviada (Mad, Val, Bar, Sev). Se traduce a la
+ * forma larga que usan los partes; si no se reconoce se devuelve vacío y
+ * el mecánico la elige a mano.
  */
 function normalizarSede_(v) {
   const s = norm_(v);
   if (!s) return '';
-  if (s.indexOf('barcelona') !== -1 || s === 'bcn' || s === 'bar') return 'Barcelona';
-  if (s.indexOf('madrid') !== -1 || s === 'mad' || s === 'mad.') return 'Madrid';
-  if (s.indexOf('valencia') !== -1 || s === 'vlc' || s === 'val') return 'Valencia';
-  if (s.indexOf('sevilla') !== -1 || s === 'sev' || s === 'svq') return 'Sevilla';
+  if (s.indexOf('bar') === 0 || s === 'bcn') return 'Barcelona';
+  if (s.indexOf('mad') === 0) return 'Madrid';
+  if (s.indexOf('val') === 0 || s === 'vlc') return 'Valencia';
+  if (s.indexOf('sev') === 0 || s === 'svq') return 'Sevilla';
   return '';
 }
 
-/** Puestos que no entran en el desplegable aunque estén en el bloque TALLER. */
 function esPuestoExcluido_(v) {
-  return norm_(v).indexOf('supervisor') !== -1;
+  const s = norm_(v);
+  return PUESTOS_EXCLUIDOS.some(function (p) { return s.indexOf(p) !== -1; });
 }
 
-/**
- * Los mecánicos no viven en una hoja propia: están en un bloque al final
- * de la pestaña "Vacaciones", bajo una celda que pone TALLER. Esta función
- * localiza ese bloque, encuentra su fila de encabezados y lee las filas
- * hasta que el bloque se acaba, dejando fuera al supervisor de taller.
- *
- * Devuelve [{nombre, sede, puesto}] ordenado por nombre.
- */
+/** Devuelve [{nombre, sede, puesto}] de la gente de taller, ordenada. */
 function mecanicos_() {
-  return bloqueTaller_().lista;
+  return personalTaller_().lista;
 }
 
 /**
- * Igual que mecanicos_ pero devolviendo también cómo se ha interpretado la
- * hoja. `diagnostico()` lo usa para poder enseñar qué ha encontrado.
+ * Los mecánicos no tienen hoja propia: están en la pestaña "Vacaciones",
+ * que lista a toda la plantilla con sus encabezados en la fila 5. Lo que
+ * identifica al taller no es el rótulo "TALLER" suelto que hay más abajo,
+ * sino la columna **Sub área** con el valor "Taller".
+ *
+ * Devuelve también cómo se ha interpretado la hoja, para `diagnostico()`.
  */
-function bloqueTaller_() {
+function personalTaller_() {
   if (!MECANICOS_ID) {
     throw new Error('Falta MECANICOS_ID en la configuración de Code.gs.');
   }
@@ -308,74 +342,38 @@ function bloqueTaller_() {
   }
   const datos = hoja.getDataRange().getValues();
 
-  // 1. La celda que marca el bloque. Se busca de abajo arriba porque el
-  //    listado está al final de la hoja y la palabra puede salir antes.
-  var filaMarca = -1, colMarca = -1;
-  for (var r = datos.length - 1; r >= 0 && filaMarca === -1; r--) {
-    for (var c = 0; c < datos[r].length; c++) {
-      if (norm_(datos[r][c]) === 'taller') { filaMarca = r; colMarca = c; break; }
-    }
-  }
-  if (filaMarca === -1) {
+  const enc = buscarEncabezados_(datos, COLS_MECANICOS, 'nombre', 20);
+  if (!enc) {
     throw new Error(
-      'No encuentro ninguna celda que ponga "TALLER" en la pestaña "' +
-      MECANICOS_HOJA + '". Ahí es donde empieza la lista de mecánicos.'
+      'En la pestaña "' + MECANICOS_HOJA + '" no encuentro la fila de encabezados ' +
+      'con la columna de nombres (he mirado las 20 primeras filas).'
+    );
+  }
+  const cols = enc.cols;
+  if (cols.subarea === -1) {
+    throw new Error(
+      'En la pestaña "' + MECANICOS_HOJA + '" no encuentro la columna "Sub área", ' +
+      'que es la que dice quién es de taller.'
     );
   }
 
-  // 2. La fila de encabezados: la primera de las seis siguientes (o la
-  //    propia fila de la marca) que contenga algo parecido a "Nombre".
-  var filaCab = -1;
-  for (var k = 0; k <= 6 && filaMarca + k < datos.length; k++) {
-    const fila = datos[filaMarca + k];
-    const tiene = fila.some(function (v) {
-      const n = norm_(v);
-      return n === 'nombre' || n === 'puesto' || n === 'sede' ||
-             n.indexOf('nombre') === 0;
-    });
-    if (tiene) { filaCab = filaMarca + k; break; }
-  }
-  if (filaCab === -1) {
-    throw new Error(
-      'Encontré "TALLER" en la fila ' + (filaMarca + 1) + ' de "' + MECANICOS_HOJA +
-      '", pero no veo debajo una fila de encabezados con Nombre / Puesto / Sede.'
-    );
-  }
-
-  const cab = datos[filaCab];
-  const cols = mapearColumnas_(cab, {
-    nombre: ['nombre', 'nombre y apellidos', 'trabajador', 'empleado', 'persona'],
-    puesto: ['puesto', 'cargo', 'categoria', 'funcion'],
-    sede:   ['sede', 'centro', 'delegacion', 'ciudad', 'oficina'],
-    activo: ['activo', 'alta', 'en activo', 'estado']
-  });
-
-  // Si no hay columna de nombre reconocible, se usa la de la marca TALLER.
-  const iNombre = cols.nombre !== -1 ? cols.nombre : colMarca;
-
-  // 3. Filas del bloque: se corta con dos vacías seguidas o al acabar la hoja.
   const vistos = {};
   const lista = [];
   const excluidos = [];
-  var vaciasSeguidas = 0;
 
-  for (var i = filaCab + 1; i < datos.length; i++) {
+  for (var i = enc.fila + 1; i < datos.length; i++) {
     const f = datos[i];
-    const nombre = String(f[iNombre] == null ? '' : f[iNombre]).trim();
+    const nombre = String(f[cols.nombre] == null ? '' : f[cols.nombre]).trim();
+    if (!nombre) continue;
+    if (norm_(nombre) === 'nombres' || norm_(nombre) === 'nombre') continue;
 
-    if (!nombre) {
-      vaciasSeguidas++;
-      if (vaciasSeguidas >= 2) break;
-      continue;
-    }
-    vaciasSeguidas = 0;
-
-    // Un nuevo encabezado significa que empieza otro bloque distinto.
-    if (norm_(nombre) === 'nombre' || norm_(nombre) === 'taller') continue;
+    if (norm_(f[cols.subarea]) !== SUBAREA_TALLER) continue;
 
     const puesto = cols.puesto === -1 ? '' : String(f[cols.puesto] || '').trim();
-    if (esPuestoExcluido_(puesto)) { excluidos.push(nombre + ' (' + puesto + ')'); continue; }
-    if (cols.activo !== -1 && esBaja_(f[cols.activo])) { excluidos.push(nombre + ' (baja)'); continue; }
+    if (esPuestoExcluido_(puesto)) {
+      excluidos.push(nombre + ' — ' + puesto);
+      continue;
+    }
 
     const clave = norm_(nombre);
     if (vistos[clave]) continue;
@@ -393,9 +391,10 @@ function bloqueTaller_() {
   return {
     lista: lista,
     excluidos: excluidos,
-    filaMarca: filaMarca + 1,
-    filaCabecera: filaCab + 1,
-    encabezados: cab.filter(function (v) { return String(v || '').trim(); }).join(' | '),
+    filaCabecera: enc.fila + 1,
+    encabezados: datos[enc.fila].filter(function (v) {
+      return String(v || '').trim();
+    }).join(' | '),
     columnas: cols
   };
 }
@@ -1003,11 +1002,11 @@ function diagnostico() {
   }
 
   try {
-    const b = bloqueTaller_();
-    lineas.push('Bloque TALLER      : marca en fila ' + b.filaMarca +
-      ', encabezados en fila ' + b.filaCabecera);
-    lineas.push('   encabezados leídos : ' + b.encabezados);
+    const b = personalTaller_();
+    lineas.push('Personal de taller : encabezados en fila ' + b.filaCabecera);
+    lineas.push('   encabezados leidos : ' + b.encabezados);
     lineas.push('   columnas usadas    : nombre=' + b.columnas.nombre +
+      ' subarea=' + b.columnas.subarea +
       ' puesto=' + b.columnas.puesto + ' sede=' + b.columnas.sede +
       '   (-1 = no encontrada)');
     lineas.push('Mecánicos activos  : ' + b.lista.length);

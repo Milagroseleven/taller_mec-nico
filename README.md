@@ -134,44 +134,57 @@ cuadre.
 Los encabezados se buscan **sin distinguir mayúsculas ni acentos**, así que no
 tienen que coincidir exactamente.
 
+**Ninguna de las dos hojas tiene los encabezados en la fila 1**, así que la fila
+de encabezados se busca en las 20 primeras en lugar de darse por hecha.
+
 ### Maestro de motos — pestaña `Maestro`
 
-| Campo | Encabezados que reconoce | Estado |
+Encabezados en la **fila 4**. Verificado contra la hoja real: **4.996 motos**.
+
+| Campo | Columna real | Encabezados que reconoce |
 |---|---|---|
-| Matrícula *(obligatorio)* | `Matrícula`, `Matriculas`, `Placa`, `Plate` | ✅ existe |
-| Marca | `Marca`, `Brand`, `Fabricante` | ✅ existe |
-| Modelo | `Modelo`, `Model` | ✅ existe |
-| Año | `Año`, `Year`, `Fecha matriculación` | ⚠️ **no existe todavía** |
-| Km | `Km`, `Kms`, `Kilómetros`, `Kilometraje` | ⚠️ **no existe todavía** |
+| Matrícula *(obligatorio)* | `Matricula` | `Matrícula`, `Placa`, `Plate` |
+| Marca | `Marca` | `Marca`, `Brand`, `Fabricante` |
+| Modelo | `Modelo` | `Modelo`, `Model` |
+| Año | `Fecha de matriculación` | `Fecha de matriculación`, `Año`, `Year` |
+| Km | `KMs` | `KMs`, `Km`, `Kilómetros`, `Kilometraje` |
 
-> **Año y Km saldrán como *Ingreso pdte* en toda la vista de equipo** hasta que
-> el maestro tenga esas dos columnas. El código ya las busca: en cuanto se
-> añadan con cualquiera de esos nombres, aparecen solas sin tocar nada.
+Del año sólo se extrae el año (`24/10/2017` → `2017`) y los km se reformatean a
+un estilo único, porque en la hoja conviven `18116`, `7.134` y `19.000`. Faltan
+km en 21 motos y año en 5; ésas mostrarán *Ingreso pdte* en esas dos columnas.
 
-### Mecánicos — bloque `TALLER` de la pestaña `Vacaciones`
+Como el maestro ronda las 5.000 filas y la consulta se dispara cada vez que un
+mecánico escribe una matrícula, **sólo se leen las cinco columnas necesarias**
+en vez de las 26 de la hoja.
 
-Los mecánicos no tienen hoja propia: están en un bloque al final de la pestaña
-*Vacaciones*, bajo una celda que pone **TALLER**. El código lo localiza así:
+### Mecánicos — pestaña `Vacaciones`
 
-1. Busca de abajo arriba la celda cuyo texto es `TALLER`.
-2. En las seis filas siguientes busca la de encabezados (la que contenga
-   `Nombre`, `Puesto` o `Sede`).
-3. Lee hacia abajo hasta encontrar dos filas vacías seguidas.
-4. Descarta a quien tenga **`Supervisor`** en su puesto, y a quien esté marcado
-   como baja si existe columna de estado.
+Encabezados en la **fila 5**: `Nº | Nombres | Sub área | Puesto | Sede | …`
 
-La **Sede** viene abreviada y se traduce sola: `BCN` → Barcelona, `MAD` →
-Madrid, `VLC`/`VAL` → Valencia, `SEV` → Sevilla. También acepta el nombre
-completo. Si una sede no se reconoce, el mecánico simplemente la elige a mano.
+El rótulo `TALLER` que hay suelto más abajo es sólo decorativo: **lo que
+identifica a un mecánico es la columna `Sub área` con el valor `Taller`**. El
+código busca la fila de encabezados, filtra por esa columna y descarta a quien
+lleve `Supervisor` en el puesto.
 
-No hay personal mecánico en Sevilla, pero **Sevilla sigue siendo elegible como
+Verificado contra la hoja real: **13 personas de taller**, con Álvaro Hernanseiz
+(Supervisor de taller) excluido. Repartidas en Madrid (8), Valencia (3) y
+Barcelona (2).
+
+> Ojo: **Jhon Cruz entra en la lista como «Auxiliar de taller»**, porque la regla
+> acordada era excluir sólo al supervisor. Si tampoco debe firmar partes, se
+> añade `'auxiliar'` a `PUESTOS_EXCLUIDOS` en `Code.gs`.
+
+La **Sede** viene abreviada y se traduce sola: `Bar` → Barcelona, `Mad` →
+Madrid, `Val` → Valencia, `Sev` → Sevilla. Si alguna no se reconoce, el mecánico
+la elige a mano.
+
+No hay personal de taller en Sevilla, pero **Sevilla sigue siendo elegible como
 sede** en el formulario: la sede es dónde se hizo el trabajo, no de dónde es el
 mecánico.
 
-Si la estructura de ese bloque cambia, lo primero que hay que mirar es la salida
-de `diagnostico()`, que imprime en qué fila encontró la marca, qué encabezados
-leyó, qué columnas ha usado, la lista completa de mecánicos detectados con su
-sede y quién ha quedado excluido y por qué.
+Si la estructura cambia, lo primero que hay que mirar es la salida de
+`diagnostico()`: imprime en qué fila encontró los encabezados, cuáles leyó, qué
+columnas usó, la lista completa de mecánicos con su sede y quién quedó excluido.
 
 ---
 
