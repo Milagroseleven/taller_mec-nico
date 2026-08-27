@@ -31,7 +31,9 @@ Fecha de revisión → Hora inicio/fin → **Vista previa** → *Guardar* / *Edi
 - **La consulta salta mientras se escribe.** En cuanto la matrícula tiene sus
   siete caracteres se busca sola, sin esperar a salir del campo. Va por un
   índice de matrículas cacheado seis horas y luego lee una única fila del
-  maestro, en vez de recorrer las 5.000 motos en cada tecleo.
+  maestro, en vez de recorrer las 5.000 motos en cada tecleo. Mientras busca se
+  ve un indicador con spinner —*«Buscando la matrícula en Maestro…»*— cuyo texto
+  va cambiando si tarda, para que nadie piense que se ha quedado colgado.
 - **La matrícula se normaliza sola.** Llegan indistintamente como `7083 MGF` y
   como `8514LZB`; se guardan siempre igual para que el cruce con el maestro y el
   buscador no fallen.

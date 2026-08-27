@@ -52,6 +52,13 @@
            autocomplete="off" autocapitalize="characters" spellcheck="false">
     <p class="hint" id="hintMatricula">Si la moto está registrada, la marca y el modelo se completarán automáticamente</p>
 
+    <!-- Aviso de que la búsqueda está en marcha: el maestro tiene casi 5.000
+         motos y la primera consulta del día tarda un par de segundos. -->
+    <div id="buscando" class="buscando oculto">
+      <span class="giro-mini"></span>
+      <span id="buscandoTexto">Buscando la matrícula en Maestro…</span>
+    </div>
+
     <!-- Moto encontrada en el maestro: sólo se confirma, no hay nada que rellenar. -->
     <div id="fichaMoto" class="ficha oculto">
       <div class="ficha-modelo" id="fichaModelo"></div>
@@ -145,6 +152,7 @@
   var guardando = false;
   var temporizador = null;    // debounce de la consulta de matrícula
   var ultimaConsultada = '';
+  var avisosLentos = [];      // temporizadores del mensaje de búsqueda
 
   var LS_MECANICO = 'taller.mecanico';
   var LS_SEDE = 'taller.sede';
@@ -336,10 +344,11 @@
     if (limpia) { clearTimeout(temporizador); consultar(limpia); }
   });
 
-  /** Esconde a la vez la ficha y el bloque de moto nueva. */
+  /** Esconde a la vez la ficha, el bloque de moto nueva y el buscador. */
   function ocultarMoto() {
     esconder('fichaMoto');
     esconder('bloqueNueva');
+    terminarBusqueda();
   }
 
   /**
@@ -363,18 +372,48 @@
     h.classList.toggle('buscando', texto === 'Buscando la moto…');
   }
 
+  /**
+   * Enseña el indicador de búsqueda. Si tarda, el texto va cambiando para
+   * que el mecánico sepa que sigue trabajando y no que se ha quedado colgado.
+   */
+  function empezarBusqueda() {
+    el('buscandoTexto').textContent = 'Buscando la matrícula en Maestro…';
+    ver('buscando');
+
+    avisosLentos.forEach(clearTimeout);
+    avisosLentos = [
+      setTimeout(function () {
+        el('buscandoTexto').textContent = 'Revisando las casi 5.000 motos del maestro…';
+      }, 2500),
+      setTimeout(function () {
+        el('buscandoTexto').textContent = 'Un momento más, ya casi está…';
+      }, 6000)
+    ];
+  }
+
+  function terminarBusqueda() {
+    avisosLentos.forEach(clearTimeout);
+    avisosLentos = [];
+    esconder('buscando');
+  }
+
   function consultar(limpia) {
     if (!limpia || limpia === ultimaConsultada) return;
     ultimaConsultada = limpia;
-    estadoConsulta('Buscando la moto…');
+    ocultarMoto();
+    empezarBusqueda();
 
     google.script.run
       .withSuccessHandler(function (r) {
+        terminarBusqueda();
         if (mat.value.replace(/[^A-Z0-9]/g, '') !== limpia) return;  // ya cambió
         pintarConsulta(r);
       })
       .withFailureHandler(function () {
+        terminarBusqueda();
+        ultimaConsultada = '';   // que se pueda reintentar con la misma matrícula
         estadoConsulta('No se ha podido consultar. Escribe marca y modelo a mano.');
+        ver('bloqueNueva');
       })
       .consultarMatricula(limpia);
   }

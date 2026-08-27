@@ -253,6 +253,29 @@
   .detalle-horario { font-size: 13.5px; color: #6b7280; margin-bottom: 10px; }
   .detalle-horario b { color: #1a1f27; }
 
+  /* Indicador de que se está consultando el maestro. Ocupa el mismo hueco
+     que luego ocupará la ficha, así el formulario no da saltos. */
+  .buscando {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #eef1f5;
+    border: 1px solid #dfe4ea;
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-top: 10px;
+    font-size: 14px;
+    color: #374151;
+  }
+  .giro-mini {
+    width: 16px; height: 16px;
+    flex: 0 0 16px;
+    border: 2.5px solid #cbd2db;
+    border-top-color: #1f2a37;
+    border-radius: 50%;
+    animation: giro 0.7s linear infinite;
+  }
+
   /* Ficha de la moto encontrada en el maestro: sólo confirma lo que es, no
      hay nada que rellenar. Los campos de marca y modelo únicamente aparecen
      cuando la matrícula no está registrada. */
