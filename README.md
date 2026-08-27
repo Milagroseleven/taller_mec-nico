@@ -86,23 +86,19 @@ Script la añade sola.
 En **Configuración del proyecto** marca *Mostrar el archivo de manifiesto
 `appsscript.json`* y pega el contenido de `appsscript.json`.
 
-### 3. Rellenar la configuración
+### 3. Configuración
 
-Al principio de `Code.gs` están las constantes. Sólo dos son obligatorias:
+Ya viene rellena con los recursos reales:
 
-```javascript
-const MAESTRO_ID   = '';   // OBLIGATORIO: Sheet del maestro de motos
-const MECANICOS_ID = '';   // OBLIGATORIO: Sheet con los mecánicos activos
-```
-
-Las demás pueden quedarse vacías y el script resuelve solo:
-
-| Constante | Si se deja vacía |
+| Constante | Apunta a |
 |---|---|
-| `HOJA_ID` | Usa el Sheet que contiene el script |
-| `MAESTRO_HOJA` / `MECANICOS_HOJA` | Usa la primera pestaña |
-| `CARPETA_ID` | Crea la carpeta `Revisiones Taller - Fotos` en Drive |
-| `LOGO_ID` | El PDF imprime «MOTICK» en texto |
+| `HOJA_ID` | Sheet de registro donde se guardan los partes |
+| `MAESTRO_ID` + `MAESTRO_HOJA` | Pestaña **Maestro** del Sheet de personal y flota |
+| `MECANICOS_ID` + `MECANICOS_HOJA` | Pestaña **Vacaciones** del mismo Sheet |
+| `CARPETA_ID` | Carpeta de Drive para las fotos |
+| `LOGO_ID` | Vacío: el PDF imprime «MOTICK» en texto |
+
+Si alguno cambia de sitio, se sustituye ahí y ya está.
 
 ### 4. Preparar las hojas
 
@@ -138,31 +134,44 @@ cuadre.
 Los encabezados se buscan **sin distinguir mayúsculas ni acentos**, así que no
 tienen que coincidir exactamente.
 
-### Maestro de motos
+### Maestro de motos — pestaña `Maestro`
 
-| Campo | Encabezados que reconoce |
-|---|---|
-| Matrícula *(obligatorio)* | `Matrícula`, `Matriculas`, `Placa`, `Plate` |
-| Marca | `Marca`, `Brand`, `Fabricante` |
-| Modelo | `Modelo`, `Model` |
-| Año | `Año`, `Year`, `Fecha matriculación` |
-| Km | `Km`, `Kms`, `Kilómetros`, `Kilometraje` |
+| Campo | Encabezados que reconoce | Estado |
+|---|---|---|
+| Matrícula *(obligatorio)* | `Matrícula`, `Matriculas`, `Placa`, `Plate` | ✅ existe |
+| Marca | `Marca`, `Brand`, `Fabricante` | ✅ existe |
+| Modelo | `Modelo`, `Model` | ✅ existe |
+| Año | `Año`, `Year`, `Fecha matriculación` | ⚠️ **no existe todavía** |
+| Km | `Km`, `Kms`, `Kilómetros`, `Kilometraje` | ⚠️ **no existe todavía** |
 
-### Mecánicos
+> **Año y Km saldrán como *Ingreso pdte* en toda la vista de equipo** hasta que
+> el maestro tenga esas dos columnas. El código ya las busca: en cuanto se
+> añadan con cualquiera de esos nombres, aparecen solas sin tocar nada.
 
-| Campo | Encabezados que reconoce |
-|---|---|
-| Nombre | `Nombre`, `Mecánico`, `Nombre y apellidos` |
-| Sede | `Sede`, `Centro`, `Delegación`, `Ciudad` |
-| Activo | `Activo`, `Alta`, `En activo` |
+### Mecánicos — bloque `TALLER` de la pestaña `Vacaciones`
 
-Si tus encabezados son otros, añádelos a `COLS_MAESTRO` o `COLS_MECANICOS` en
-`Code.gs`. Sólo se descarta un mecánico si la columna *Activo* dice
-explícitamente `No`, `Baja`, `Inactivo`, `0` o `False`: una celda vacía cuenta
-como activo, para que nadie desaparezca del desplegable por un hueco en la hoja.
+Los mecánicos no tienen hoja propia: están en un bloque al final de la pestaña
+*Vacaciones*, bajo una celda que pone **TALLER**. El código lo localiza así:
 
-La columna **Sede** de los mecánicos es opcional. Si está, se propone sola al
-elegir el nombre, pero el mecánico siempre puede cambiarla.
+1. Busca de abajo arriba la celda cuyo texto es `TALLER`.
+2. En las seis filas siguientes busca la de encabezados (la que contenga
+   `Nombre`, `Puesto` o `Sede`).
+3. Lee hacia abajo hasta encontrar dos filas vacías seguidas.
+4. Descarta a quien tenga **`Supervisor`** en su puesto, y a quien esté marcado
+   como baja si existe columna de estado.
+
+La **Sede** viene abreviada y se traduce sola: `BCN` → Barcelona, `MAD` →
+Madrid, `VLC`/`VAL` → Valencia, `SEV` → Sevilla. También acepta el nombre
+completo. Si una sede no se reconoce, el mecánico simplemente la elige a mano.
+
+No hay personal mecánico en Sevilla, pero **Sevilla sigue siendo elegible como
+sede** en el formulario: la sede es dónde se hizo el trabajo, no de dónde es el
+mecánico.
+
+Si la estructura de ese bloque cambia, lo primero que hay que mirar es la salida
+de `diagnostico()`, que imprime en qué fila encontró la marca, qué encabezados
+leyó, qué columnas ha usado, la lista completa de mecánicos detectados con su
+sede y quién ha quedado excluido y por qué.
 
 ---
 

@@ -28,20 +28,20 @@
 // ---------------------------------------------------------------------
 
 /** Sheet donde se guardan los partes. Vacío = la hoja que contiene el script. */
-const HOJA_ID = '';
+const HOJA_ID = '1o0VjHtR1lhE21j-mLR9vP42K5GrimD0-6A7VjvTbxAs';
 
 /** Maestro de motos: de aquí salen marca, modelo, año y km. OBLIGATORIO. */
-const MAESTRO_ID = '';
+const MAESTRO_ID = '1L7veBgiS4b9v7WpiVrRvCCUtnBrBIwJRzxV-pb52ZCs';
 /** Pestaña del maestro. Vacío = la primera. */
-const MAESTRO_HOJA = '';
+const MAESTRO_HOJA = 'Maestro';
 
 /** Lista de mecánicos activos. OBLIGATORIO. */
-const MECANICOS_ID = '';
+const MECANICOS_ID = '1L7veBgiS4b9v7WpiVrRvCCUtnBrBIwJRzxV-pb52ZCs';
 /** Pestaña de mecánicos. Vacío = la primera. */
-const MECANICOS_HOJA = '';
+const MECANICOS_HOJA = 'Vacaciones';
 
 /** Carpeta de Drive para las fotos. Vacío = se crea con el nombre de abajo. */
-const CARPETA_ID = '';
+const CARPETA_ID = '15p5wiMufVIDIkB4JhzDD4ZZrL2xxCOVa';
 const CARPETA_NOMBRE = 'Revisiones Taller - Fotos';
 
 /** Logo PNG para la cabecera del PDF. Vacío = se imprime el nombre en texto. */
@@ -262,39 +262,142 @@ function esBaja_(v) {
   return s === 'no' || s === 'false' || s === '0' || s === 'baja' || s === 'inactivo';
 }
 
-/** Devuelve [{nombre, sede}] de los mecánicos en activo, ordenados. */
+/**
+ * La hoja guarda la sede abreviada. Se traduce a la forma larga que usan
+ * los partes; si no se reconoce, se devuelve vacío y el mecánico elige.
+ */
+function normalizarSede_(v) {
+  const s = norm_(v);
+  if (!s) return '';
+  if (s.indexOf('barcelona') !== -1 || s === 'bcn' || s === 'bar') return 'Barcelona';
+  if (s.indexOf('madrid') !== -1 || s === 'mad' || s === 'mad.') return 'Madrid';
+  if (s.indexOf('valencia') !== -1 || s === 'vlc' || s === 'val') return 'Valencia';
+  if (s.indexOf('sevilla') !== -1 || s === 'sev' || s === 'svq') return 'Sevilla';
+  return '';
+}
+
+/** Puestos que no entran en el desplegable aunque estén en el bloque TALLER. */
+function esPuestoExcluido_(v) {
+  return norm_(v).indexOf('supervisor') !== -1;
+}
+
+/**
+ * Los mecánicos no viven en una hoja propia: están en un bloque al final
+ * de la pestaña "Vacaciones", bajo una celda que pone TALLER. Esta función
+ * localiza ese bloque, encuentra su fila de encabezados y lee las filas
+ * hasta que el bloque se acaba, dejando fuera al supervisor de taller.
+ *
+ * Devuelve [{nombre, sede, puesto}] ordenado por nombre.
+ */
 function mecanicos_() {
+  return bloqueTaller_().lista;
+}
+
+/**
+ * Igual que mecanicos_ pero devolviendo también cómo se ha interpretado la
+ * hoja. `diagnostico()` lo usa para poder enseñar qué ha encontrado.
+ */
+function bloqueTaller_() {
   if (!MECANICOS_ID) {
     throw new Error('Falta MECANICOS_ID en la configuración de Code.gs.');
   }
   const ss = SpreadsheetApp.openById(MECANICOS_ID);
   const hoja = MECANICOS_HOJA ? ss.getSheetByName(MECANICOS_HOJA) : ss.getSheets()[0];
   if (!hoja) {
-    throw new Error('No existe la pestaña "' + MECANICOS_HOJA + '" en la hoja de mecánicos.');
+    throw new Error('No existe la pestaña "' + MECANICOS_HOJA + '" en ese Sheet.');
   }
   const datos = hoja.getDataRange().getValues();
-  if (datos.length < 2) return [];
 
-  const cols = mapearColumnas_(datos[0], COLS_MECANICOS);
-  const iNombre = cols.nombre === -1 ? 0 : cols.nombre;
+  // 1. La celda que marca el bloque. Se busca de abajo arriba porque el
+  //    listado está al final de la hoja y la palabra puede salir antes.
+  var filaMarca = -1, colMarca = -1;
+  for (var r = datos.length - 1; r >= 0 && filaMarca === -1; r--) {
+    for (var c = 0; c < datos[r].length; c++) {
+      if (norm_(datos[r][c]) === 'taller') { filaMarca = r; colMarca = c; break; }
+    }
+  }
+  if (filaMarca === -1) {
+    throw new Error(
+      'No encuentro ninguna celda que ponga "TALLER" en la pestaña "' +
+      MECANICOS_HOJA + '". Ahí es donde empieza la lista de mecánicos.'
+    );
+  }
 
+  // 2. La fila de encabezados: la primera de las seis siguientes (o la
+  //    propia fila de la marca) que contenga algo parecido a "Nombre".
+  var filaCab = -1;
+  for (var k = 0; k <= 6 && filaMarca + k < datos.length; k++) {
+    const fila = datos[filaMarca + k];
+    const tiene = fila.some(function (v) {
+      const n = norm_(v);
+      return n === 'nombre' || n === 'puesto' || n === 'sede' ||
+             n.indexOf('nombre') === 0;
+    });
+    if (tiene) { filaCab = filaMarca + k; break; }
+  }
+  if (filaCab === -1) {
+    throw new Error(
+      'Encontré "TALLER" en la fila ' + (filaMarca + 1) + ' de "' + MECANICOS_HOJA +
+      '", pero no veo debajo una fila de encabezados con Nombre / Puesto / Sede.'
+    );
+  }
+
+  const cab = datos[filaCab];
+  const cols = mapearColumnas_(cab, {
+    nombre: ['nombre', 'nombre y apellidos', 'trabajador', 'empleado', 'persona'],
+    puesto: ['puesto', 'cargo', 'categoria', 'funcion'],
+    sede:   ['sede', 'centro', 'delegacion', 'ciudad', 'oficina'],
+    activo: ['activo', 'alta', 'en activo', 'estado']
+  });
+
+  // Si no hay columna de nombre reconocible, se usa la de la marca TALLER.
+  const iNombre = cols.nombre !== -1 ? cols.nombre : colMarca;
+
+  // 3. Filas del bloque: se corta con dos vacías seguidas o al acabar la hoja.
   const vistos = {};
   const lista = [];
-  for (var i = 1; i < datos.length; i++) {
+  const excluidos = [];
+  var vaciasSeguidas = 0;
+
+  for (var i = filaCab + 1; i < datos.length; i++) {
     const f = datos[i];
-    const nombre = String(f[iNombre] || '').trim();
-    if (!nombre) continue;
-    if (cols.activo !== -1 && esBaja_(f[cols.activo])) continue;
+    const nombre = String(f[iNombre] == null ? '' : f[iNombre]).trim();
+
+    if (!nombre) {
+      vaciasSeguidas++;
+      if (vaciasSeguidas >= 2) break;
+      continue;
+    }
+    vaciasSeguidas = 0;
+
+    // Un nuevo encabezado significa que empieza otro bloque distinto.
+    if (norm_(nombre) === 'nombre' || norm_(nombre) === 'taller') continue;
+
+    const puesto = cols.puesto === -1 ? '' : String(f[cols.puesto] || '').trim();
+    if (esPuestoExcluido_(puesto)) { excluidos.push(nombre + ' (' + puesto + ')'); continue; }
+    if (cols.activo !== -1 && esBaja_(f[cols.activo])) { excluidos.push(nombre + ' (baja)'); continue; }
+
     const clave = norm_(nombre);
     if (vistos[clave]) continue;
     vistos[clave] = true;
+
     lista.push({
       nombre: nombre,
-      sede: cols.sede === -1 ? '' : String(f[cols.sede] || '').trim()
+      sede: cols.sede === -1 ? '' : normalizarSede_(f[cols.sede]),
+      puesto: puesto
     });
   }
+
   lista.sort(function (a, b) { return a.nombre.localeCompare(b.nombre, 'es'); });
-  return lista;
+
+  return {
+    lista: lista,
+    excluidos: excluidos,
+    filaMarca: filaMarca + 1,
+    filaCabecera: filaCab + 1,
+    encabezados: cab.filter(function (v) { return String(v || '').trim(); }).join(' | '),
+    columnas: cols
+  };
 }
 
 // ---------------------------------------------------------------------
@@ -900,9 +1003,21 @@ function diagnostico() {
   }
 
   try {
-    const l = mecanicos_();
-    lineas.push('Mecánicos activos  : OK -> ' + l.length + ' (' +
-      l.slice(0, 5).map(function (x) { return x.nombre; }).join(', ') + ')');
+    const b = bloqueTaller_();
+    lineas.push('Bloque TALLER      : marca en fila ' + b.filaMarca +
+      ', encabezados en fila ' + b.filaCabecera);
+    lineas.push('   encabezados leídos : ' + b.encabezados);
+    lineas.push('   columnas usadas    : nombre=' + b.columnas.nombre +
+      ' puesto=' + b.columnas.puesto + ' sede=' + b.columnas.sede +
+      '   (-1 = no encontrada)');
+    lineas.push('Mecánicos activos  : ' + b.lista.length);
+    b.lista.forEach(function (m) {
+      lineas.push('   · ' + m.nombre + '  [' + (m.sede || 'SIN SEDE') + ']' +
+        (m.puesto ? '  ' + m.puesto : ''));
+    });
+    if (b.excluidos.length) {
+      lineas.push('Excluidos          : ' + b.excluidos.join(', '));
+    }
   } catch (err) {
     lineas.push('Mecánicos activos  : ERROR -> ' + err.message);
   }
