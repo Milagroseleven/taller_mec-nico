@@ -83,9 +83,16 @@ el paso siguiente fallará.
 
 ## Paso 3 · Preparar las hojas y autorizar
 
-1. En la barra de arriba del editor hay un desplegable con nombres de funciones.
-   Selecciona **`prepararHojas`**.
-2. Pulsa **▷ Ejecutar**.
+1. **Haz clic en `Código.gs`** en la lista de Archivos.
+
+   > Esto no es opcional: el botón *Ejecutar* y el desplegable de funciones
+   > **sólo aparecen cuando el archivo abierto es de código**. Si tienes abierto
+   > `appsscript.json` o cualquiera de los `.html`, la barra de arriba sólo
+   > mostrará *Registro de ejecución* y pensarás que falta algo.
+
+2. Ahora en la barra de arriba tienes **▷ Ejecutar**, **Depurar** y un
+   desplegable con los nombres de las funciones. Selecciona **`prepararHojas`**.
+3. Pulsa **▷ Ejecutar**.
 
 La primera vez Google pide permisos, y **la pantalla asusta más de lo que
 debería**. Es normal: la aplicación es tuya y Google no verifica proyectos
@@ -110,7 +117,7 @@ Vuelve al Sheet y comprueba que están esas dos pestañas nuevas.
 
 ## Paso 4 · Comprobar que lee bien las hojas
 
-1. En el mismo desplegable, elige **`diagnostico`**.
+1. Con `Código.gs` abierto, elige **`diagnostico`** en el mismo desplegable.
 2. Pulsa **▷ Ejecutar**.
 3. Mira el **Registro de ejecución**.
 
