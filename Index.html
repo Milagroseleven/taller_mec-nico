@@ -50,7 +50,7 @@
     <label for="matricula">Matrícula <span class="req">*</span></label>
     <input type="text" id="matricula" class="mayus" placeholder="Ej. 7083 MGF"
            autocomplete="off" autocapitalize="characters" spellcheck="false">
-    <p class="hint" id="hintMatricula">Si la moto está registrada, la marca y el modelo se completarán automáticamente</p>
+    <p class="hint" id="hintMatricula"></p>
 
     <!-- Aviso de que la búsqueda está en marcha: el maestro tiene casi 5.000
          motos y la primera consulta del día tarda un par de segundos. -->
@@ -75,7 +75,7 @@
 
     <div id="avisoPrevio" class="aviso azul oculto"></div>
 
-    <label>Revisiones efectuadas <span class="req">*</span></label>
+    <label>Registra las revisiones efectuadas a la moto <span class="req">*</span></label>
     <div class="rev-alta">
       <input type="text" id="revTexto" placeholder="Ej. Cambio de aceite y filtro"
              autocomplete="off">
@@ -366,10 +366,12 @@
     };
   }
 
+  /**
+   * Escribe bajo la matrícula el resultado de la consulta. Vacío por defecto:
+   * el hueco sólo se ocupa cuando hay algo que decir.
+   */
   function estadoConsulta(texto) {
-    var h = el('hintMatricula');
-    h.textContent = texto || 'Si la moto está registrada, la marca y el modelo se completarán automáticamente';
-    h.classList.toggle('buscando', texto === 'Buscando la moto…');
+    el('hintMatricula').textContent = texto || '';
   }
 
   /**
