@@ -24,17 +24,17 @@
   <!-- ---------- Identidad (sólo la primera vez) ---------- -->
   <div id="pIdentidad" class="card oculto">
     <h1>Revisiones de Taller</h1>
-    <p class="sub">Dinos quién eres y en qué sede trabajas. Sólo hay que hacerlo una vez:
+    <p class="sub">Selecciona tu sede y tu nombre. Sólo hay que hacerlo una vez,
       el móvil lo recuerda para las siguientes motos.</p>
-
-    <label for="selMecanico">Mecánico <span class="req">*</span></label>
-    <select id="selMecanico"></select>
 
     <label for="selSede">Sede <span class="req">*</span></label>
     <select id="selSede"></select>
 
+    <label for="selMecanico">Mecánico <span class="req">*</span></label>
+    <select id="selMecanico"><option value="">Elige primero la sede…</option></select>
+
     <div id="errIdentidad" class="aviso rojo oculto"></div>
-    <button id="btnIdentidad" class="primario">Empezar</button>
+    <button id="btnIdentidad" class="primario">Continuar</button>
   </div>
 
   <!-- ---------- Formulario ---------- -->
@@ -48,17 +48,19 @@
     <p class="sub">Registra la moto que acabas de revisar.</p>
 
     <label for="matricula">Matrícula <span class="req">*</span></label>
-    <input type="text" id="matricula" class="mayus" placeholder="7083 MGF"
+    <input type="text" id="matricula" class="mayus" placeholder="Ej. 7083 MGF"
            autocomplete="off" autocapitalize="characters" spellcheck="false">
+    <p class="hint" id="hintMatricula">Al escribirla se buscan solos la marca y el modelo.</p>
     <div id="avisoMaestro" class="aviso amarillo oculto"></div>
     <div id="avisoPrevio" class="aviso azul oculto"></div>
 
-    <label for="marca">Marca</label>
-    <input type="text" id="marca" placeholder="Se rellena sola si la moto está en el maestro"
-           autocomplete="off">
+    <label for="marca">Marca de la moto <span class="opcional">Opcional</span></label>
+    <input type="text" id="marca" placeholder="Ej. YAMAHA" autocomplete="off">
+    <p class="hint">Se rellena en automático si la moto está registrada en maestro.</p>
 
     <label for="modelo">Modelo <span class="req">*</span></label>
     <input type="text" id="modelo" placeholder="Ej. MT-07" autocomplete="off">
+    <p class="hint">Se rellena en automático si la moto está registrada en maestro.</p>
 
     <label>Revisiones efectuadas <span class="req">*</span></label>
     <div class="rev-alta">
@@ -66,7 +68,8 @@
              autocomplete="off">
       <button type="button" id="btnAddRev">Añadir</button>
     </div>
-    <p class="hint">Escribe una revisión y pulsa Enter o «Añadir». Repite para cada una.</p>
+    <p class="hint">Escribe una revisión y pulsa <b>Añadir</b>. Repite para cada
+      revisión que le hayas hecho a la moto, una por una.</p>
     <ul class="revisiones" id="listaRev"></ul>
 
     <label>Foto de la moto <span class="req">*</span></label>
@@ -81,8 +84,19 @@
     <label>Estado <span class="req">*</span></label>
     <div class="estados" id="estados"></div>
 
-    <label for="fecha">Fecha término <span class="req">*</span></label>
+    <label for="fecha">Fecha de revisión <span class="req">*</span></label>
     <input type="date" id="fecha">
+
+    <div class="horas">
+      <div>
+        <label for="horaInicio">Hora de inicio <span class="opcional">Opcional</span></label>
+        <input type="time" id="horaInicio">
+      </div>
+      <div>
+        <label for="horaFin">Hora de fin <span class="opcional">Opcional</span></label>
+        <input type="time" id="horaFin">
+      </div>
+    </div>
 
     <div id="errForm" class="aviso rojo oculto"></div>
     <button id="btnPrevia" class="primario">Vista previa</button>
@@ -120,6 +134,8 @@
   var estadoSel = '';
   var datosMoto = null;       // última respuesta de consultarMatricula
   var guardando = false;
+  var temporizador = null;    // debounce de la consulta de matrícula
+  var ultimaConsultada = '';
 
   var LS_MECANICO = 'taller.mecanico';
   var LS_SEDE = 'taller.sede';
@@ -150,6 +166,12 @@
     try { return localStorage.getItem(clave) || ''; } catch (e) { return ''; }
   }
 
+  function escapar(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
   // -------------------------------------------------------------------
   // Arranque
   // -------------------------------------------------------------------
@@ -168,16 +190,6 @@
       return;
     }
     CFG = cfg;
-
-    var sel = el('selMecanico');
-    sel.innerHTML = '<option value="">Elige tu nombre…</option>';
-    cfg.mecanicos.forEach(function (m) {
-      var o = document.createElement('option');
-      o.value = m.nombre;
-      o.textContent = m.nombre;
-      o.setAttribute('data-sede', m.sede || '');
-      sel.appendChild(o);
-    });
 
     var selS = el('selSede');
     selS.innerHTML = '<option value="">Elige la sede…</option>';
@@ -224,22 +236,45 @@
   }
 
   // -------------------------------------------------------------------
-  // Identidad
+  // Identidad: primero la sede, y el desplegable de nombres se filtra
   // -------------------------------------------------------------------
-  el('selMecanico').onchange = function () {
-    // Si la hoja de mecánicos trae sede, se propone sola.
-    var op = this.options[this.selectedIndex];
-    var sede = op ? op.getAttribute('data-sede') : '';
-    if (sede && !el('selSede').value) el('selSede').value = sede;
+  el('selSede').onchange = function () {
+    pintarMecanicos(this.value);
   };
 
-  el('btnIdentidad').onclick = function () {
-    var mec = el('selMecanico').value;
-    var sede = el('selSede').value;
-    if (!mec || !sede) {
-      mostrarError('errIdentidad', 'Elige tu nombre y tu sede para continuar.');
+  function pintarMecanicos(sede) {
+    var sel = el('selMecanico');
+    sel.innerHTML = '';
+
+    if (!sede) {
+      sel.innerHTML = '<option value="">Elige primero la sede…</option>';
       return;
     }
+
+    var suyos = CFG.mecanicos.filter(function (m) { return m.sede === sede; });
+
+    // En sedes sin mecánicos asignados (Sevilla) se ofrecen todos, para que
+    // quien vaya a echar una mano pueda firmar el parte igualmente.
+    var todos = false;
+    if (!suyos.length) { suyos = CFG.mecanicos; todos = true; }
+
+    sel.innerHTML = '<option value="">' +
+      (todos ? 'No hay mecánicos en ' + escapar(sede) + ' — elige tu nombre…'
+             : 'Elige tu nombre…') + '</option>';
+
+    suyos.forEach(function (m) {
+      var o = document.createElement('option');
+      o.value = m.nombre;
+      o.textContent = m.nombre;
+      sel.appendChild(o);
+    });
+  }
+
+  el('btnIdentidad').onclick = function () {
+    var sede = el('selSede').value;
+    var mec = el('selMecanico').value;
+    if (!sede) { mostrarError('errIdentidad', 'Elige tu sede.'); return; }
+    if (!mec) { mostrarError('errIdentidad', 'Elige tu nombre.'); return; }
     esconder('errIdentidad');
     recordar(LS_MECANICO, mec);
     recordar(LS_SEDE, sede);
@@ -247,8 +282,9 @@
   };
 
   function aplicarIdentidad(mec, sede) {
-    el('selMecanico').value = mec;
     el('selSede').value = sede;
+    pintarMecanicos(sede);
+    el('selMecanico').value = mec;
     el('quienSoy').innerHTML = '<b>' + escapar(mec) + '</b> · ' + escapar(sede);
     pantalla('pForm');
   }
@@ -259,39 +295,70 @@
   };
 
   // -------------------------------------------------------------------
-  // Matrícula
+  // Matrícula: se consulta mientras se escribe, no sólo al salir del campo
   // -------------------------------------------------------------------
   var mat = el('matricula');
 
   mat.addEventListener('input', function () {
     this.value = this.value.toUpperCase();
     datosMoto = null;
+
+    var limpia = this.value.replace(/[^A-Z0-9]/g, '');
+    clearTimeout(temporizador);
+
+    // Una matrícula española son 4 cifras y 3 letras. En cuanto están todas
+    // se busca sola, sin esperar a que el mecánico salga del campo.
+    if (limpia.length >= 7) {
+      temporizador = setTimeout(function () { consultar(limpia); }, 250);
+    } else {
+      esconder('avisoMaestro');
+      esconder('avisoPrevio');
+      estadoConsulta('');
+    }
   });
 
-  mat.addEventListener('blur', consultar);
+  mat.addEventListener('blur', function () {
+    var limpia = mat.value.replace(/[^A-Z0-9]/g, '');
+    if (limpia) { clearTimeout(temporizador); consultar(limpia); }
+  });
 
-  function consultar() {
-    var v = mat.value.replace(/[^A-Za-z0-9]/g, '');
-    if (!v) { esconder('avisoMaestro'); esconder('avisoPrevio'); return; }
+  function estadoConsulta(texto) {
+    var h = el('hintMatricula');
+    h.textContent = texto || 'Al escribirla se buscan solos la marca y el modelo.';
+    h.classList.toggle('buscando', texto === 'Buscando la moto…');
+  }
+
+  function consultar(limpia) {
+    if (!limpia || limpia === ultimaConsultada) return;
+    ultimaConsultada = limpia;
+    estadoConsulta('Buscando la moto…');
 
     google.script.run
-      .withSuccessHandler(pintarConsulta)
-      .withFailureHandler(function () { /* silencioso: el mecánico puede seguir */ })
-      .consultarMatricula(v);
+      .withSuccessHandler(function (r) {
+        if (mat.value.replace(/[^A-Z0-9]/g, '') !== limpia) return;  // ya cambió
+        pintarConsulta(r);
+      })
+      .withFailureHandler(function () {
+        estadoConsulta('No se ha podido consultar. Escribe marca y modelo a mano.');
+      })
+      .consultarMatricula(limpia);
   }
 
   function pintarConsulta(r) {
-    if (!r || !r.ok) return;
+    if (!r || !r.ok) { estadoConsulta(''); return; }
     datosMoto = r;
     mat.value = r.matricula;
 
     if (r.enMaestro) {
       esconder('avisoMaestro');
-      if (r.marca && !el('marca').value) el('marca').value = r.marca;
-      if (r.modelo && !el('modelo').value) el('modelo').value = r.modelo;
+      if (r.marca) el('marca').value = r.marca;
+      if (r.modelo) el('modelo').value = r.modelo;
+      estadoConsulta('Moto encontrada en el maestro.');
     } else {
-      el('avisoMaestro').textContent = 'Matrícula aún no ingresada en Maestro. Escribe el modelo.';
+      el('avisoMaestro').textContent =
+        'Matrícula aún no ingresada en Maestro. Escribe el modelo.';
       ver('avisoMaestro');
+      estadoConsulta('');
     }
 
     if (r.previo) {
@@ -496,18 +563,29 @@
   };
 
   function validar() {
-    if (!mat.value.replace(/[^A-Za-z0-9]/g, '')) return 'Escribe la matrícula.';
+    if (!mat.value.replace(/[^A-Z0-9]/g, '')) return 'Escribe la matrícula.';
     if (!el('modelo').value.trim()) return 'El modelo es obligatorio.';
     if (!revisiones.length) return 'Añade al menos una revisión.';
     if (!foto) return 'Adjunta la foto de la moto.';
     if (!estadoSel) return 'Elige el estado.';
-    if (!el('fecha').value) return 'Indica la fecha de término.';
+    if (!el('fecha').value) return 'Indica la fecha de revisión.';
+
+    var hi = el('horaInicio').value, hf = el('horaFin').value;
+    if (hi && hf && hf < hi) return 'La hora de fin es anterior a la de inicio.';
     return '';
   }
 
   function fila(etiqueta, valor) {
     return '<div class="resumen-fila"><span class="et">' + etiqueta +
            '</span><span class="vl">' + escapar(valor || '—') + '</span></div>';
+  }
+
+  function textoHorario() {
+    var hi = el('horaInicio').value, hf = el('horaFin').value;
+    if (hi && hf) return hi + ' - ' + hf;
+    if (hi) return 'desde ' + hi;
+    if (hf) return 'hasta ' + hf;
+    return '';
   }
 
   function pintarResumen() {
@@ -522,7 +600,8 @@
       fila('Mecánico', recordado(LS_MECANICO)) +
       fila('Sede', recordado(LS_SEDE)) +
       fila('Estado', estadoSel) +
-      fila('Fecha término', fechaTexto) +
+      fila('Fecha de revisión', fechaTexto) +
+      (textoHorario() ? fila('Horario', textoHorario()) : '') +
       '<h2>Revisiones (' + revisiones.length + ')</h2>' +
       '<ul class="revisiones">' +
         revisiones.map(function (r, i) {
@@ -563,10 +642,15 @@
         matricula: mat.value,
         marca: el('marca').value.trim(),
         modelo: el('modelo').value.trim(),
+        // El año ya lo trajo la consulta de matrícula, así que se manda desde
+        // aquí en vez de hacer que el servidor relea el maestro al guardar.
+        anio: datosMoto ? datosMoto.anio : '',
         mecanico: recordado(LS_MECANICO),
         sede: recordado(LS_SEDE),
         estado: estadoSel,
         fecha: el('fecha').value,
+        horaInicio: el('horaInicio').value,
+        horaFin: el('horaFin').value,
         revisiones: revisiones,
         foto: { nombre: foto.nombre, tipo: foto.tipo, datos: foto.datos }
       });
@@ -589,6 +673,11 @@
       window.open(r.urlEquipo, '_blank');
     };
     pantalla('pOk');
+
+    // Los indicadores se rehacen ahora, con el mecánico ya viendo el "listo".
+    google.script.run
+      .withFailureHandler(function () {})
+      .refrescarIndicadores();
   }
 
   el('btnOtra').onclick = function () {
@@ -597,10 +686,13 @@
     el('modelo').value = '';
     el('revTexto').value = '';
     el('fecha').value = CFG.hoy;
+    el('horaInicio').value = '';
+    el('horaFin').value = '';
     revisiones = [];
     foto = null;
     estadoSel = '';
     datosMoto = null;
+    ultimaConsultada = '';
     el('fileCamara').value = '';
     el('fileArchivo').value = '';
     Array.prototype.forEach.call(el('estados').children, function (c) {
@@ -608,18 +700,13 @@
     });
     pintarRevisiones();
     pintarFoto();
+    estadoConsulta('');
     esconder('avisoMaestro');
     esconder('avisoPrevio');
     esconder('errForm');
     pantalla('pForm');
     mat.focus();
   };
-
-  function escapar(s) {
-    return String(s == null ? '' : s)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
 })();
 </script>
 </body>

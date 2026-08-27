@@ -86,9 +86,17 @@ const SUBAREA_TALLER = 'taller';
 const PUESTOS_EXCLUIDOS = ['supervisor', 'auxiliar'];
 
 const CABECERA_PARTES = [
-  'ID', 'Timestamp', 'Fecha término', 'Matrícula', 'Marca', 'Modelo', 'Año',
-  'Sede', 'Mecánico', 'Estado', 'Revisiones', 'Nº revisiones', 'URL foto'
+  'ID', 'Timestamp', 'Fecha revisión', 'Hora inicio', 'Hora fin', 'Matrícula',
+  'Marca', 'Modelo', 'Año', 'Sede', 'Mecánico', 'Estado', 'Revisiones',
+  'Nº revisiones', 'URL foto'
 ];
+
+/** Posición de cada campo en la fila, para no contar índices a mano. */
+const P = {
+  id: 0, timestamp: 1, fecha: 2, horaInicio: 3, horaFin: 4, matricula: 5,
+  marca: 6, modelo: 7, anio: 8, sede: 9, mecanico: 10, estado: 11,
+  revisiones: 12, nRevisiones: 13, urlFoto: 14
+};
 
 /** Texto que se muestra cuando la moto todavía no está en el maestro. */
 const SIN_MAESTRO = 'Ingreso pdte';
@@ -227,16 +235,13 @@ function buscarEncabezados_(datos, alias, obligatoria, limite) {
 
 /** Caché de una sola ejecución: el maestro se lee una vez por petición. */
 var _maestro = null;
+var _hojaMaestro = null;
 
-/**
- * Devuelve { MATRICULANORMALIZADA: {marca, modelo, anio, km} }.
- *
- * El maestro tiene los encabezados en la fila 4 y ronda las 4.000 motos,
- * así que sólo se leen las columnas que hacen falta en lugar de la hoja
- * entera: la consulta de matrícula se hace en cada teclado del mecánico.
- */
-function maestro_() {
-  if (_maestro) return _maestro;
+/** Seis horas: el maestro cambia poco y un fallo de caché se resuelve solo. */
+const CACHE_SEGUNDOS = 21600;
+
+function hojaMaestro_() {
+  if (_hojaMaestro) return _hojaMaestro;
   if (!MAESTRO_ID) {
     throw new Error('Falta MAESTRO_ID en la configuración de Code.gs.');
   }
@@ -245,7 +250,12 @@ function maestro_() {
   if (!hoja) {
     throw new Error('No existe la pestaña "' + MAESTRO_HOJA + '" en el maestro de motos.');
   }
+  _hojaMaestro = hoja;
+  return hoja;
+}
 
+/** Localiza la fila de encabezados del maestro y mapea sus columnas. */
+function encabezadosMaestro_(hoja) {
   const cabeceras = hoja.getRange(1, 1, Math.min(hoja.getLastRow(), 20),
                                   hoja.getLastColumn()).getValues();
   const enc = buscarEncabezados_(cabeceras, COLS_MAESTRO, 'matricula', 20);
@@ -255,9 +265,104 @@ function maestro_() {
       'con la columna de matrícula (he mirado las 20 primeras filas).'
     );
   }
+  return enc;
+}
 
+/**
+ * Índice de matrículas del maestro, guardado en caché seis horas.
+ *
+ * Sólo se cachea la columna de matrículas —unos 40 KB para 5.000 motos, que
+ * caben de sobra en el caché de Apps Script—, no la hoja entera. Con eso la
+ * consulta que dispara el mecánico al teclear una matrícula no tiene que
+ * releer miles de filas: busca en el índice y luego lee una sola fila.
+ */
+function indiceMaestro_(forzar) {
+  const cache = CacheService.getScriptCache();
+
+  if (!forzar) {
+    try {
+      const meta = cache.get('maestro_meta');
+      const claves = cache.get('maestro_claves');
+      if (meta && claves) {
+        const m = JSON.parse(meta);
+        return { primera: m.primera, cols: m.cols, claves: claves.split(',') };
+      }
+    } catch (err) {
+      // Caché ilegible: se relee de la hoja y listo.
+    }
+  }
+
+  const hoja = hojaMaestro_();
+  const enc = encabezadosMaestro_(hoja);
+  const primera = enc.fila + 2;                  // +1 por índice, +1 por la cabecera
+  const nFilas = hoja.getLastRow() - primera + 1;
+
+  var claves = [];
+  if (nFilas > 0) {
+    claves = hoja.getRange(primera, enc.cols.matricula + 1, nFilas, 1)
+      .getValues()
+      .map(function (f) { return normalizarMatricula_(f[0]); });
+  }
+
+  try {
+    cache.put('maestro_meta',
+      JSON.stringify({ primera: primera, cols: enc.cols }), CACHE_SEGUNDOS);
+    cache.put('maestro_claves', claves.join(','), CACHE_SEGUNDOS);
+  } catch (err) {
+    // Si no cabe en el caché se sigue funcionando, sólo que más lento.
+    console.warn('No se pudo cachear el índice del maestro: ' + err);
+  }
+
+  return { primera: primera, cols: enc.cols, claves: claves };
+}
+
+/** Vacía el índice cacheado. Útil tras dar motos de alta en el maestro. */
+function limpiarCacheMaestro() {
+  CacheService.getScriptCache().removeAll(['maestro_meta', 'maestro_claves']);
+  return 'Caché del maestro vaciada.';
+}
+
+/**
+ * Busca una sola moto. Es lo que se llama al teclear la matrícula, así que
+ * lee una única fila en vez de las 5.000 de la hoja.
+ */
+function motoDeMaestro_(clave) {
+  var idx = indiceMaestro_(false);
+  var i = idx.claves.indexOf(clave);
+
+  if (i === -1) {
+    // Puede ser una moto dada de alta después de cachear el índice, así que
+    // se refresca y se vuelve a mirar antes de darla por inexistente.
+    idx = indiceMaestro_(true);
+    i = idx.claves.indexOf(clave);
+    if (i === -1) return null;
+  }
+
+  const cols = idx.cols;
+  const ancho = Math.max(cols.matricula, cols.marca, cols.modelo,
+                         cols.anio, cols.km) + 1;
+  const v = hojaMaestro_().getRange(idx.primera + i, 1, 1, ancho).getValues()[0];
+
+  return {
+    marca:  cols.marca  === -1 ? '' : String(v[cols.marca]  || '').trim(),
+    modelo: cols.modelo === -1 ? '' : String(v[cols.modelo] || '').trim(),
+    anio:   cols.anio   === -1 ? '' : textoAnio_(v[cols.anio]),
+    km:     cols.km     === -1 ? '' : textoKm_(v[cols.km])
+  };
+}
+
+/**
+ * Devuelve { MATRICULANORMALIZADA: {marca, modelo, anio, km} } con el maestro
+ * entero. Sólo lo usa la vista de equipo, que necesita cruzar muchas motos de
+ * una vez; para una sola matrícula está `motoDeMaestro_`, mucho más rápido.
+ */
+function maestro_() {
+  if (_maestro) return _maestro;
+
+  const hoja = hojaMaestro_();
+  const enc = encabezadosMaestro_(hoja);
   const cols = enc.cols;
-  const primera = enc.fila + 2;                       // +1 por índice, +1 por saltar la cabecera
+  const primera = enc.fila + 2;
   const nFilas = hoja.getLastRow() - primera + 1;
   if (nFilas < 1) { _maestro = {}; return _maestro; }
 
@@ -423,28 +528,44 @@ function filasPartes_() {
   const salida = [];
   for (var i = 1; i < datos.length; i++) {
     const f = datos[i];
-    if (!String(f[0] || '').trim()) continue;
-    const revisiones = String(f[10] || '')
+    if (!String(f[P.id] || '').trim()) continue;
+    const revisiones = String(f[P.revisiones] || '')
       .split('\n')
       .map(function (s) { return s.trim(); })
       .filter(function (s) { return s; });
     salida.push({
-      id: String(f[0]).trim(),
-      timestamp: aFecha_(f[1]) || new Date(0),
-      fecha: aFecha_(f[2]) || aFecha_(f[1]) || new Date(0),
-      matricula: normalizarMatricula_(f[3]),
-      marca: String(f[4] || '').trim(),
-      modelo: String(f[5] || '').trim(),
-      anio: String(f[6] || '').trim(),
-      sede: String(f[7] || '').trim(),
-      mecanico: String(f[8] || '').trim(),
-      estado: String(f[9] || '').trim(),
+      id: String(f[P.id]).trim(),
+      timestamp: aFecha_(f[P.timestamp]) || new Date(0),
+      fecha: aFecha_(f[P.fecha]) || aFecha_(f[P.timestamp]) || new Date(0),
+      horaInicio: textoHora_(f[P.horaInicio]),
+      horaFin: textoHora_(f[P.horaFin]),
+      matricula: normalizarMatricula_(f[P.matricula]),
+      marca: String(f[P.marca] || '').trim(),
+      modelo: String(f[P.modelo] || '').trim(),
+      anio: String(f[P.anio] || '').trim(),
+      sede: String(f[P.sede] || '').trim(),
+      mecanico: String(f[P.mecanico] || '').trim(),
+      estado: String(f[P.estado] || '').trim(),
       revisiones: revisiones,
-      nRevisiones: Number(f[11]) || revisiones.length,
-      urlFoto: String(f[12] || '').trim()
+      nRevisiones: Number(f[P.nRevisiones]) || revisiones.length,
+      urlFoto: String(f[P.urlFoto] || '').trim()
     });
   }
   return salida;
+}
+
+/**
+ * Deja una hora en HH:mm. El Sheet devuelve unas veces texto y otras un
+ * Date de 1899, según cómo esté formateada la celda.
+ */
+function textoHora_(v) {
+  if (v === '' || v == null) return '';
+  if (v instanceof Date && !isNaN(v)) {
+    return Utilities.formatDate(v, zonaHoraria_(), 'HH:mm');
+  }
+  const m = String(v).match(/(\d{1,2}):(\d{2})/);
+  if (!m) return '';
+  return ('0' + m[1]).slice(-2) + ':' + m[2];
 }
 
 /** Ordena de la más reciente a la más antigua (fecha de trabajo, luego alta). */
@@ -494,13 +615,16 @@ function obtenerConfiguracionInicial() {
 /**
  * Consulta una matrícula: si está en el maestro devuelve marca, modelo,
  * año y km; y en cualquier caso avisa de si esa moto ya tiene partes.
+ *
+ * Se dispara mientras el mecánico teclea, así que va por el índice cacheado
+ * y acaba leyendo una sola fila del maestro.
  */
 function consultarMatricula(matricula) {
   try {
     const clave = normalizarMatricula_(matricula);
     if (!clave) return { ok: false, error: 'Matrícula vacía.' };
 
-    const m = maestro_()[clave] || null;
+    const m = motoDeMaestro_(clave);
 
     const suyos = filasPartes_()
       .filter(function (p) { return p.matricula === clave; })
@@ -536,6 +660,11 @@ function consultarMatricula(matricula) {
 /**
  * Registra el parte y sube la foto a Drive. La foto llega desde el móvil
  * ya en base64 dentro de d.foto = {nombre, tipo, datos}.
+ *
+ * Aquí sólo pasa lo imprescindible para que el mecánico pueda seguir con la
+ * siguiente moto: subir la foto y añadir la fila. El año viene del cliente,
+ * que ya lo tiene de la consulta de matrícula, para no releer el maestro; y
+ * los indicadores se recalculan aparte, sin hacer esperar a nadie.
  */
 function guardarParte(d) {
   const lock = LockService.getScriptLock();
@@ -565,26 +694,25 @@ function guardarParte(d) {
                '-' + Math.floor(Math.random() * 900 + 100);
 
     const urlFoto = guardarFoto_(d.foto, clave, d.estado, fecha);
-    const m = maestro_()[clave] || null;
 
-    hojaPartes_().appendRow([
-      id,
-      new Date(),
-      fecha,
-      formatearMatricula_(clave),
-      String(d.marca || '').trim(),
-      String(d.modelo || '').trim(),
-      m ? m.anio : '',
-      d.sede,
-      String(d.mecanico).trim(),
-      d.estado,
-      revisiones.join('\n'),
-      revisiones.length,
-      urlFoto
-    ]);
+    const fila = [];
+    fila[P.id] = id;
+    fila[P.timestamp] = new Date();
+    fila[P.fecha] = fecha;
+    fila[P.horaInicio] = textoHora_(d.horaInicio);
+    fila[P.horaFin] = textoHora_(d.horaFin);
+    fila[P.matricula] = formatearMatricula_(clave);
+    fila[P.marca] = String(d.marca || '').trim();
+    fila[P.modelo] = String(d.modelo || '').trim();
+    fila[P.anio] = String(d.anio || '').trim();
+    fila[P.sede] = d.sede;
+    fila[P.mecanico] = String(d.mecanico).trim();
+    fila[P.estado] = d.estado;
+    fila[P.revisiones] = revisiones.join('\n');
+    fila[P.nRevisiones] = revisiones.length;
+    fila[P.urlFoto] = urlFoto;
 
-    // Si fallan las métricas no se pierde el parte: se recalculan luego.
-    try { actualizarProductividad(); } catch (err) { console.error(err); }
+    hojaPartes_().appendRow(fila);
 
     return {
       ok: true,
@@ -596,6 +724,20 @@ function guardarParte(d) {
     return { ok: false, error: String(err && err.message ? err.message : err) };
   } finally {
     lock.releaseLock();
+  }
+}
+
+/**
+ * La llama el formulario en segundo plano justo después de guardar, cuando
+ * el mecánico ya está viendo la confirmación. Nunca hace esperar a nadie.
+ */
+function refrescarIndicadores() {
+  try {
+    actualizarProductividad();
+    return { ok: true };
+  } catch (err) {
+    console.error(err);
+    return { ok: false };
   }
 }
 
@@ -660,6 +802,7 @@ function listarPartes() {
       return {
         id: p.id,
         fecha: fechaCorta_(p.fecha),
+        horario: horario_(p),
         matricula: formatearMatricula_(p.matricula),
         marca:  (m && m.marca)  || p.marca  || SIN_MAESTRO,
         modelo: (m && m.modelo) || p.modelo || SIN_MAESTRO,
@@ -746,6 +889,14 @@ function generarHojaTaller(id) {
   }
 }
 
+/** "09:30 - 11:00", o sólo una de las dos si falta la otra. */
+function horario_(p) {
+  if (p.horaInicio && p.horaFin) return p.horaInicio + ' - ' + p.horaFin;
+  if (p.horaInicio) return 'desde ' + p.horaInicio;
+  if (p.horaFin) return 'hasta ' + p.horaFin;
+  return '';
+}
+
 function htmlHojaTaller_(p, m) {
   const logo = logoDataUri_();
   const foto = imagenDataUri_(p.urlFoto);
@@ -799,13 +950,14 @@ function htmlHojaTaller_(p, m) {
    dato((m && m.marca) || p.marca) + ' &nbsp;·&nbsp; ' +
    dato((m && m.modelo) || p.modelo) + '</div>' +
 '<table class="datos"><tr>' +
-'  <td><span class="et">Fecha término</span><span class="vl">' + esc_(fechaCorta_(p.fecha)) + '</span></td>' +
+'  <td><span class="et">Fecha revisión</span><span class="vl">' + esc_(fechaCorta_(p.fecha)) + '</span></td>' +
+'  <td><span class="et">Horario</span><span class="vl">' + esc_(horario_(p)) + '</span></td>' +
 '  <td><span class="et">Sede</span><span class="vl">' + dato(p.sede) + '</span></td>' +
+'  <td><span class="et">Estado</span><span class="estado">' + esc_(p.estado) + '</span></td>' +
+'</tr><tr>' +
 '  <td><span class="et">Año</span><span class="vl">' + dato((m && m.anio) || p.anio) + '</span></td>' +
 '  <td><span class="et">Kilómetros</span><span class="vl">' + dato(m && m.km) + '</span></td>' +
-'</tr><tr>' +
 '  <td colspan="2"><span class="et">Mecánico responsable</span><span class="vl">' + dato(p.mecanico) + '</span></td>' +
-'  <td colspan="2"><span class="et">Estado</span><span class="estado">' + esc_(p.estado) + '</span></td>' +
 '</tr></table>' +
 '<h2>Revisiones efectuadas &nbsp;(' + p.revisiones.length + ')</h2>' +
 '<ol class="rev">' + items + '</ol>' +
@@ -961,15 +1113,17 @@ function prepararHojas() {
   const ss = libro_();
   var h = ss.getSheetByName(HOJA_PARTES);
   if (!h) h = ss.insertSheet(HOJA_PARTES);
-  if (h.getLastRow() === 0) {
-    h.getRange(1, 1, 1, CABECERA_PARTES.length).setValues([CABECERA_PARTES]);
-  }
+
+  // La cabecera se reescribe siempre, no sólo al crearla: así una versión
+  // nueva que añada columnas deja la hoja al día con volver a ejecutar esto.
+  h.getRange(1, 1, 1, CABECERA_PARTES.length).setValues([CABECERA_PARTES]);
   h.getRange(1, 1, 1, CABECERA_PARTES.length)
     .setFontWeight('bold').setBackground('#1f2a37').setFontColor('#ffffff');
   h.setFrozenRows(1);
-  const anchos = [150, 145, 105, 100, 110, 150, 60, 100, 160, 120, 420, 95, 230];
+
+  const anchos = [150, 145, 105, 95, 90, 100, 110, 150, 60, 100, 160, 120, 420, 95, 230];
   anchos.forEach(function (w, i) { h.setColumnWidth(i + 1, w); });
-  h.getRange(2, 11, Math.max(h.getMaxRows() - 1, 1), 1).setWrap(true);
+  h.getRange(2, P.revisiones + 1, Math.max(h.getMaxRows() - 1, 1), 1).setWrap(true);
 
   actualizarProductividad();
   return 'Hojas "' + HOJA_PARTES + '" y "' + HOJA_PRODUCTIVIDAD + '" listas.';

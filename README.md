@@ -21,12 +21,17 @@ Un mismo despliegue sirve las dos, según la URL:
 
 ### Formulario del mecánico
 
-Mecánico → Sede → Matrícula → Marca → Modelo → Revisiones → Foto → Estado →
-Fecha término → **Vista previa** → *Guardar* / *Editar*
+Sede → Mecánico → Matrícula → Marca → Modelo → Revisiones → Foto → Estado →
+Fecha de revisión → Hora inicio/fin → **Vista previa** → *Guardar* / *Editar*
 
-- **Mecánico y sede se eligen una sola vez.** Quedan recordados en el móvil, así
-  que a partir de la segunda moto el formulario empieza directamente en la
-  matrícula.
+- **Sede y mecánico se eligen una sola vez.** Primero la sede, y el desplegable
+  de nombres se filtra con los mecánicos de esa sede. Quedan recordados en el
+  móvil, así que a partir de la segunda moto el formulario empieza directamente
+  en la matrícula.
+- **La consulta salta mientras se escribe.** En cuanto la matrícula tiene sus
+  siete caracteres se busca sola, sin esperar a salir del campo. Va por un
+  índice de matrículas cacheado seis horas y luego lee una única fila del
+  maestro, en vez de recorrer las 5.000 motos en cada tecleo.
 - **La matrícula se normaliza sola.** Llegan indistintamente como `7083 MGF` y
   como `8514LZB`; se guardan siempre igual para que el cruce con el maestro y el
   buscador no fallen.
@@ -147,8 +152,8 @@ columnas usó, la lista completa de mecánicos con su sede y quién quedó exclu
 
 ### Pestaña `Partes`
 
-`ID · Timestamp · Fecha término · Matrícula · Marca · Modelo · Año · Sede ·
-Mecánico · Estado · Revisiones · Nº revisiones · URL foto`
+`ID · Timestamp · Fecha revisión · Hora inicio · Hora fin · Matrícula · Marca ·
+Modelo · Año · Sede · Mecánico · Estado · Revisiones · Nº revisiones · URL foto`
 
 ### Pestaña `Productividad`
 

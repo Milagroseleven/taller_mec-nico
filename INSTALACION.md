@@ -207,10 +207,13 @@ Esto es lo que más se olvida: **pegar el código nuevo no basta**. Hay que
 publicar una versión nueva.
 
 1. Pega los cambios en los archivos y guarda (`Ctrl + S`).
-2. **Implementar → Gestionar implementaciones**.
-3. Pulsa el **lápiz** (Editar) de la implementación que ya existe.
-4. En **Versión**, elige **Nueva versión**.
-5. Pulsa **Implementar**.
+2. **Si la versión nueva añade columnas a la hoja `Partes`**, ejecuta otra vez
+   **`prepararHojas`** con `Código.gs` abierto. Reescribe la fila de encabezados
+   y deja la hoja al día; no toca los partes ya guardados.
+3. **Implementar → Gestionar implementaciones**.
+4. Pulsa el **lápiz** (Editar) de la implementación que ya existe.
+5. En **Versión**, elige **Nueva versión**.
+6. Pulsa **Implementar**.
 
 Hazlo así y **la URL no cambia**, que es lo importante: los mecánicos tienen ese
 enlace guardado en el móvil. Si en vez de esto creas una *Nueva implementación*,
