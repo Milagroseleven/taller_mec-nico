@@ -40,8 +40,10 @@ Fecha de revisión → Hora inicio/fin → **Vista previa** → *Guardar* / *Edi
 - **Si la moto está en el maestro**, no se pide nada: aparece una ficha verde de
   confirmación con marca, modelo, año y km. No hay campos que rellenar.
 - **Si no está**, sale la nota *«Matrícula aún no está registrada en Maestro»* y
-  **sólo entonces** aparecen los campos de marca y modelo. El modelo es
-  obligatorio y la marca opcional.
+  **sólo entonces** aparece un campo, el **modelo**, que es obligatorio. La marca
+  no se pide: se rellenará cuando la moto se dé de alta en el maestro, que es
+  donde le corresponde vivir. Hasta entonces la vista de equipo la muestra como
+  *Ingreso pdte*.
 - **Si la moto ya pasó por taller**, sale un aviso con la última fecha y el
   mecánico que la atendió, y un enlace *Ver registro previo*. Nunca bloquea el
   alta.

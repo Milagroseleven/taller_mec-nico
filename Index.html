@@ -65,12 +65,9 @@
       <div class="ficha-extra" id="fichaExtra"></div>
     </div>
 
-    <!-- Moto que no está en el maestro: aquí sí hay que escribirlos a mano. -->
+    <!-- Moto que no está en el maestro: sólo se le pide el modelo. -->
     <div id="bloqueNueva" class="oculto">
       <div class="aviso amarillo">Matrícula aún no está registrada en Maestro</div>
-
-      <label for="marca">Marca de la moto <span class="opcional">Opcional</span></label>
-      <input type="text" id="marca" placeholder="Ej. YAMAHA" autocomplete="off">
 
       <label for="modelo">Modelo <span class="req">*</span></label>
       <input type="text" id="modelo" placeholder="Ej. MT-07" autocomplete="off">
@@ -352,17 +349,20 @@
   }
 
   /**
-   * Marca, modelo y año que se van a guardar: del maestro si la moto está
-   * registrada, y de lo que haya escrito el mecánico si no.
+   * Marca, modelo y año que se van a guardar.
+   *
+   * Si la moto está en el maestro salen de ahí. Si no, al mecánico sólo se le
+   * pide el modelo: la marca se deja vacía y se rellenará cuando la moto se dé
+   * de alta en el maestro, que es donde le corresponde vivir.
    */
   function motoActual() {
     if (datosMoto && datosMoto.enMaestro) {
       return { marca: datosMoto.marca, modelo: datosMoto.modelo, anio: datosMoto.anio };
     }
     return {
-      marca: el('marca').value.trim(),
+      marca: '',
       modelo: el('modelo').value.trim(),
-      anio: datosMoto ? datosMoto.anio : ''
+      anio: ''
     };
   }
 
@@ -426,7 +426,6 @@
     if (r.enMaestro) {
       // Está en el maestro: se enseña la ficha y no se pide nada más.
       esconder('bloqueNueva');
-      el('marca').value = '';
       el('modelo').value = '';
       el('fichaModelo').textContent =
         [r.marca, r.modelo].filter(Boolean).join(' · ') || 'Moto registrada';
@@ -764,7 +763,6 @@
 
   el('btnOtra').onclick = function () {
     mat.value = '';
-    el('marca').value = '';
     el('modelo').value = '';
     el('revTexto').value = '';
     el('fecha').value = CFG.hoy;
