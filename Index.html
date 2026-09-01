@@ -85,6 +85,19 @@
       revisión que le hayas hecho a la moto, una por una.</p>
     <ul class="revisiones" id="listaRev"></ul>
 
+    <label>Repuestos comprados <span class="opcional">Opcional</span></label>
+    <div class="rep-alta">
+      <input type="text" id="repTexto" placeholder="Ej. Pastillas de freno"
+             autocomplete="off">
+      <input type="text" id="repCoste" class="importe" placeholder="0,00"
+             inputmode="decimal" autocomplete="off">
+      <button type="button" id="btnAddRep">Añadir</button>
+    </div>
+    <p class="hint">Si has comprado alguna pieza para esta moto, apúntala con su
+      precio en euros. Si no ha hecho falta ninguna, deja esto vacío.</p>
+    <ul class="revisiones" id="listaRep"></ul>
+    <div class="total-rep oculto" id="totalRep"></div>
+
     <label>Foto de la moto <span class="req">*</span></label>
     <div class="foto-btns">
       <div class="foto-btn" id="btnCamara">📷 Hacer foto</div>
@@ -143,6 +156,7 @@
 
   var CFG = null;
   var revisiones = [];
+  var repuestos = [];         // [{descripcion, coste}]
   var foto = null;            // { nombre, tipo, datos, preview }
   var estadoSel = '';
   var datosMoto = null;       // última respuesta de consultarMatricula
@@ -550,6 +564,82 @@
   }
 
   // -------------------------------------------------------------------
+  // Repuestos comprados
+  // -------------------------------------------------------------------
+
+  /** Acepta coma o punto como decimal, que cada móvil pone uno. */
+  function numeroDe(v) {
+    var n = parseFloat(String(v || '').replace(/[^\d,.\-]/g, '').replace(',', '.'));
+    return isNaN(n) ? 0 : n;
+  }
+
+  function euros(n) {
+    return Number(n || 0).toFixed(2).replace('.', ',') + ' €';
+  }
+
+  function anadirRepuesto() {
+    var campo = el('repTexto');
+    var precio = el('repCoste');
+    var t = campo.value.trim();
+    if (!t) { campo.focus(); return; }
+
+    repuestos.push({ descripcion: t, coste: numeroDe(precio.value) });
+    campo.value = '';
+    precio.value = '';
+    campo.focus();
+    pintarRepuestos();
+  }
+
+  el('btnAddRep').onclick = anadirRepuesto;
+
+  // Enter en cualquiera de los dos campos añade la línea, para poder
+  // encadenar piezas sin soltar el teclado.
+  ['repTexto', 'repCoste'].forEach(function (id) {
+    el(id).addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') { ev.preventDefault(); anadirRepuesto(); }
+    });
+  });
+
+  function totalRepuestos() {
+    return repuestos.reduce(function (t, r) { return t + r.coste; }, 0);
+  }
+
+  function pintarRepuestos() {
+    var ul = el('listaRep');
+    ul.innerHTML = '';
+
+    repuestos.forEach(function (r, i) {
+      var li = document.createElement('li');
+
+      var txt = document.createElement('span');
+      txt.className = 'txt';
+      txt.textContent = r.descripcion;
+
+      var imp = document.createElement('span');
+      imp.className = 'imp';
+      imp.textContent = euros(r.coste);
+
+      var x = document.createElement('span');
+      x.className = 'quitar';
+      x.textContent = '✕';
+      x.title = 'Quitar';
+      x.onclick = function () {
+        repuestos.splice(i, 1);
+        pintarRepuestos();
+      };
+
+      li.appendChild(txt);
+      li.appendChild(imp);
+      li.appendChild(x);
+      ul.appendChild(li);
+    });
+
+    var total = el('totalRep');
+    total.classList.toggle('oculto', !repuestos.length);
+    total.textContent = 'Total repuestos: ' + euros(totalRepuestos());
+  }
+
+  // -------------------------------------------------------------------
   // Foto
   // -------------------------------------------------------------------
   el('btnCamara').onclick = function () { el('fileCamara').click(); };
@@ -712,6 +802,17 @@
         }).join('') +
       '</ul>';
 
+    if (repuestos.length) {
+      html += '<h2>Repuestos (' + repuestos.length + ')</h2>' +
+        '<ul class="revisiones">' +
+          repuestos.map(function (r) {
+            return '<li><span class="txt">' + escapar(r.descripcion) + '</span>' +
+                   '<span class="imp">' + escapar(euros(r.coste)) + '</span></li>';
+          }).join('') +
+        '</ul>' +
+        '<div class="total-rep">Total repuestos: ' + escapar(euros(totalRepuestos())) + '</div>';
+    }
+
     if (foto && foto.preview) {
       html += '<h2>Foto</h2><div class="foto-previa"><img src="' + foto.preview + '"></div>';
     } else if (foto) {
@@ -754,6 +855,7 @@
         horaInicio: el('horaInicio').value,
         horaFin: el('horaFin').value,
         revisiones: revisiones,
+        repuestos: repuestos,
         foto: { nombre: foto.nombre, tipo: foto.tipo, datos: foto.datos }
       });
   };
@@ -781,10 +883,13 @@
     mat.value = '';
     el('modelo').value = '';
     el('revTexto').value = '';
+    el('repTexto').value = '';
+    el('repCoste').value = '';
     el('fecha').value = CFG.hoy;
     el('horaInicio').value = '';
     el('horaFin').value = '';
     revisiones = [];
+    repuestos = [];
     foto = null;
     estadoSel = '';
     datosMoto = null;
@@ -794,6 +899,7 @@
     Array.prototype.forEach.call(el('estados').querySelectorAll('.estado-op'),
       function (c) { c.classList.remove('sel'); });
     pintarRevisiones();
+    pintarRepuestos();
     pintarFoto();
     estadoConsulta('');
     ocultarMoto();

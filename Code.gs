@@ -130,15 +130,19 @@ const PUESTOS_EXCLUIDOS = ['supervisor', 'auxiliar'];
 const CABECERA_PARTES = [
   'ID', 'Timestamp', 'Fecha revisión', 'Hora inicio', 'Hora fin', 'Matrícula',
   'Marca', 'Modelo', 'Año', 'Sede', 'Mecánico', 'Estado', 'Revisiones',
-  'Nº revisiones', 'URL foto'
+  'Nº revisiones', 'Repuestos', 'Coste repuestos', 'URL foto'
 ];
 
 /** Posición de cada campo en la fila, para no contar índices a mano. */
 const P = {
   id: 0, timestamp: 1, fecha: 2, horaInicio: 3, horaFin: 4, matricula: 5,
   marca: 6, modelo: 7, anio: 8, sede: 9, mecanico: 10, estado: 11,
-  revisiones: 12, nRevisiones: 13, urlFoto: 14
+  revisiones: 12, nRevisiones: 13, repuestos: 14, costeRepuestos: 15,
+  urlFoto: 16
 };
+
+/** Separador entre la pieza y su importe dentro de la celda de repuestos. */
+const SEP_REPUESTO = ' — ';
 
 /** Texto que se muestra cuando la moto todavía no está en el maestro. */
 const SIN_MAESTRO = 'Ingreso pdte. en maestro';
@@ -689,10 +693,50 @@ function filasPartes_() {
       estado: String(f[P.estado] || '').trim(),
       revisiones: revisiones,
       nRevisiones: Number(f[P.nRevisiones]) || revisiones.length,
+      repuestos: repuestosDeTexto_(f[P.repuestos]),
+      costeRepuestos: numeroDesde_(f[P.costeRepuestos]),
       urlFoto: String(f[P.urlFoto] || '').trim()
     });
   }
   return salida;
+}
+
+/**
+ * Convierte a número lo que escribe un mecánico: acepta coma o punto como
+ * decimal, y de paso quita el símbolo de euro si lo ha puesto.
+ */
+function numeroDesde_(v) {
+  if (typeof v === 'number') return isNaN(v) ? 0 : v;
+  const s = String(v == null ? '' : v).replace(/[^\d,.\-]/g, '').replace(',', '.');
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
+}
+
+/** 24.9 -> "24,90". Se guarda así dentro del texto de repuestos. */
+function importeTexto_(n) {
+  return Number(n || 0).toFixed(2).replace('.', ',');
+}
+
+/** [{descripcion, coste}] -> texto de una línea por repuesto. */
+function textoRepuestos_(lista) {
+  return (lista || []).map(function (r) {
+    return r.descripcion + SEP_REPUESTO + importeTexto_(r.coste) + ' €';
+  }).join('\n');
+}
+
+/** El texto de la celda de vuelta a [{descripcion, coste}]. */
+function repuestosDeTexto_(texto) {
+  return String(texto || '').split('\n')
+    .map(function (linea) { return linea.trim(); })
+    .filter(function (linea) { return linea; })
+    .map(function (linea) {
+      const corte = linea.lastIndexOf(SEP_REPUESTO);
+      if (corte === -1) return { descripcion: linea, coste: 0 };
+      return {
+        descripcion: linea.substring(0, corte).trim(),
+        coste: numeroDesde_(linea.substring(corte + SEP_REPUESTO.length))
+      };
+    });
 }
 
 /**
@@ -829,6 +873,19 @@ function guardarParte(d) {
       .filter(function (s) { return s; });
     if (!revisiones.length) throw new Error('Añade al menos una revisión.');
 
+    // Los repuestos son opcionales: hay revisiones que no gastan nada. Se
+    // descartan las líneas sin descripción para que no entren filas vacías.
+    const repuestos = (d.repuestos || [])
+      .map(function (r) {
+        return {
+          descripcion: String((r && r.descripcion) || '').trim(),
+          coste: numeroDesde_(r && r.coste)
+        };
+      })
+      .filter(function (r) { return r.descripcion; });
+
+    const costeTotal = repuestos.reduce(function (t, r) { return t + r.coste; }, 0);
+
     if (!d.foto || !d.foto.datos) throw new Error('Adjunta la foto de la moto.');
 
     const horaInicio = textoHora_(d.horaInicio);
@@ -857,6 +914,8 @@ function guardarParte(d) {
     fila[P.estado] = d.estado;
     fila[P.revisiones] = revisiones.join('\n');
     fila[P.nRevisiones] = revisiones.length;
+    fila[P.repuestos] = textoRepuestos_(repuestos);
+    fila[P.costeRepuestos] = costeTotal;
     fila[P.urlFoto] = urlFoto;
 
     const h = hojaPartes_();
@@ -956,6 +1015,8 @@ function listarPartes() {
         mecanico: p.mecanico,
         nRevisiones: p.nRevisiones,
         revisiones: p.revisiones,
+        repuestos: p.repuestos,
+        costeRepuestos: p.costeRepuestos,
         urlFoto: p.urlFoto
       };
     });
@@ -1083,6 +1144,19 @@ function htmlHojaTaller_(p, m) {
     ? '<div class="foto"><img src="' + foto + '"></div>'
     : '';
 
+  // Los repuestos sólo salen si los hay: una revisión sin piezas no debe
+  // arrastrar una tabla vacía en la hoja.
+  const bloqueRepuestos = !p.repuestos.length ? '' :
+    '<h2>Repuestos &nbsp;(' + p.repuestos.length + ')</h2>' +
+    '<table class="rep">' +
+    p.repuestos.map(function (r) {
+      return '<tr><td>' + esc_(r.descripcion) + '</td>' +
+             '<td class="imp">' + esc_(importeTexto_(r.coste)) + ' €</td></tr>';
+    }).join('') +
+    '<tr class="total"><td>Total repuestos</td>' +
+    '<td class="imp">' + esc_(importeTexto_(p.costeRepuestos)) + ' €</td></tr>' +
+    '</table>';
+
   return '' +
 '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' +
 '  @page { size: A4; margin: 14mm; }' +
@@ -1105,6 +1179,10 @@ function htmlHojaTaller_(p, m) {
 '  ol.rev { list-style: none; margin: 0 0 16pt; padding: 0; }' +
 '  ol.rev li { padding: 4.5pt 0 4.5pt 22pt; border-bottom: 0.5pt dotted #d5d9e0; position: relative; }' +
 '  ol.rev .n { position: absolute; left: 0; color: #6b7280; font-size: 8.5pt; font-weight: bold; }' +
+'  table.rep { width: 100%; border-collapse: collapse; margin-bottom: 16pt; }' +
+'  table.rep td { padding: 4.5pt 0; border-bottom: 0.5pt dotted #d5d9e0; }' +
+'  table.rep .imp { text-align: right; white-space: nowrap; width: 90pt; }' +
+'  table.rep .total td { font-weight: bold; border-top: 1pt solid #1f2a37; border-bottom: none; }' +
 '  .estado { display: inline-block; padding: 3pt 10pt; border: 1pt solid #1f2a37; border-radius: 3pt; font-weight: bold; font-size: 10pt; }' +
 '  .foto { margin-bottom: 16pt; }' +
 '  .foto img { max-width: 100%; max-height: 260pt; border: 0.6pt solid #d5d9e0; }' +
@@ -1130,6 +1208,7 @@ function htmlHojaTaller_(p, m) {
 '</tr></table>' +
 '<h2>Revisiones efectuadas &nbsp;(' + p.revisiones.length + ')</h2>' +
 '<ol class="rev">' + items + '</ol>' +
+bloqueRepuestos +
 (bloqueFoto ? '<h2>Fotografía</h2>' + bloqueFoto : '') +
 '<div class="firma">Firma del mecánico &nbsp;—&nbsp; ' + dato(p.mecanico) + '</div>' +
 '<div class="pie">Documento generado automáticamente el ' +
@@ -1369,9 +1448,12 @@ function prepararHojas() {
     .setFontWeight('bold').setBackground('#1f2a37').setFontColor('#ffffff');
   h.setFrozenRows(1);
 
-  const anchos = [150, 145, 105, 95, 90, 100, 110, 150, 60, 100, 160, 120, 420, 95, 230];
+  const anchos = [150, 145, 105, 95, 90, 100, 110, 150, 60, 100, 160, 120, 420, 95, 300, 120, 230];
   anchos.forEach(function (w, i) { h.setColumnWidth(i + 1, w); });
   h.getRange(2, P.revisiones + 1, Math.max(h.getMaxRows() - 1, 1), 1).setWrap(true);
+  h.getRange(2, P.repuestos + 1, Math.max(h.getMaxRows() - 1, 1), 1).setWrap(true);
+  h.getRange(2, P.costeRepuestos + 1, Math.max(h.getMaxRows() - 1, 1), 1)
+    .setNumberFormat('#,##0.00 €');
 
   actualizarProductividad();
   return 'Hojas "' + HOJA_PARTES + '" y "' + HOJA_PRODUCTIVIDAD + '" listas.';

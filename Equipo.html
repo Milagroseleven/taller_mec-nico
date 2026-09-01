@@ -93,6 +93,10 @@
       .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
+  function euros(n) {
+    return Number(n || 0).toFixed(2).replace('.', ',') + ' €';
+  }
+
   function sinAcentos(s) {
     return String(s == null ? '' : s).toLowerCase()
       .normalize('NFD').replace(/[^ -~]/g, '');
@@ -332,6 +336,18 @@
                  '<span class="txt">' + escapar(r) + '</span></li>';
         }).join('') +
       '</ul>';
+
+    if (f.repuestos && f.repuestos.length) {
+      html += '<b>Repuestos comprados (' + f.repuestos.length + ')</b>' +
+        '<ul class="revisiones" style="margin-top:8px">' +
+          f.repuestos.map(function (r) {
+            return '<li><span class="txt">' + escapar(r.descripcion) + '</span>' +
+                   '<span class="imp">' + escapar(euros(r.coste)) + '</span></li>';
+          }).join('') +
+        '</ul>' +
+        '<div class="total-rep" style="margin-bottom:10px">Total repuestos: ' +
+        escapar(euros(f.costeRepuestos)) + '</div>';
+    }
 
     if (f.urlFoto) {
       html += '<a href="' + escapar(f.urlFoto) + '" target="_blank" ' +

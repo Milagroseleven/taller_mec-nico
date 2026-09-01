@@ -21,8 +21,9 @@ Un mismo despliegue sirve las dos, según la URL:
 
 ### Formulario del mecánico
 
-Sede → Mecánico → Matrícula → Marca → Modelo → Revisiones → Foto → Estado →
-Fecha de revisión → Hora inicio/fin → **Vista previa** → *Guardar* / *Editar*
+Sede → Mecánico → Matrícula → Modelo →
+Revisiones → Repuestos → Foto → Estado → Fecha de revisión → Hora inicio/fin →
+**Vista previa** → *Guardar* / *Editar*
 
 - **Sede y mecánico se eligen una sola vez.** Primero la sede, y el desplegable
   de nombres se filtra con los mecánicos de esa sede. Quedan recordados en el
@@ -51,6 +52,10 @@ Fecha de revisión → Hora inicio/fin → **Vista previa** → *Guardar* / *Edi
   borrar. No hay catálogo cerrado todavía: los mecánicos escriben libre.
 - **La foto es obligatoria** y se reduce a 1600 px en el propio móvil antes de
   subirla, para que vaya rápida con la cobertura del taller.
+- **Los repuestos comprados se apuntan aparte**, después de las revisiones:
+  descripción e importe, uno a uno, con el total calculado solo. Es opcional —
+  hay revisiones que no gastan nada— y se guarda en dos columnas: el detalle en
+  texto y el total como número, para poder sumarlo en la hoja.
 
 ### Estado de motos
 
@@ -166,7 +171,8 @@ columnas usó, la lista completa de mecánicos con su sede y quién quedó exclu
 ### Pestaña `Fichas`
 
 `ID · Timestamp · Fecha revisión · Hora inicio · Hora fin · Matrícula · Marca ·
-Modelo · Año · Sede · Mecánico · Estado · Revisiones · Nº revisiones · URL foto`
+Modelo · Año · Sede · Mecánico · Estado · Revisiones · Nº revisiones ·
+Repuestos · Coste repuestos · URL foto`
 
 ### Pestaña `Productividad`
 
