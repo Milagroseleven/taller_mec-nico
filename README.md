@@ -57,8 +57,8 @@ Revisiones → Repuestos → Foto → Estado → Fecha de revisión → Hora ini
   hay revisiones que no gastan nada— y se guarda en dos columnas: el detalle en
   texto y el total como número, para poder sumarlo en la hoja.
 - **El tiempo invertido se calcula solo** en la hoja, a partir de la hora de
-  inicio y la de fin, en minutos. Se guarda como número para poder promediarlo,
-  y en la hoja de taller y en la vista de equipo se muestra legible («3 h 59 min»).
+  inicio y la de fin. Se guarda como duración de Sheets, así que se ve como
+  `3:59` y suma y promedia con SUM y AVERAGE sin convertir nada.
 
 ### Estado de motos
 

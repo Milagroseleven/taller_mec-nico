@@ -128,7 +128,7 @@ const SUBAREA_TALLER = 'taller';
 const PUESTOS_EXCLUIDOS = ['supervisor', 'auxiliar'];
 
 const CABECERA_PARTES = [
-  'ID', 'Timestamp', 'Fecha revisión', 'Hora inicio', 'Hora fin', 'Tiempo (min)',
+  'ID', 'Timestamp', 'Fecha revisión', 'Hora inicio', 'Hora fin', 'Tiempo',
   'Matrícula', 'Marca', 'Modelo', 'Año', 'Sede', 'Mecánico', 'Estado',
   'Revisiones', 'Nº revisiones', 'Repuestos', 'Coste repuestos', 'URL foto'
 ];
@@ -143,6 +143,14 @@ const P = {
 
 /** Separador entre la pieza y su importe dentro de la celda de repuestos. */
 const SEP_REPUESTO = ' — ';
+
+/**
+ * Nombres que tuvo antes una columna. Si aparece uno de ellos en la posición
+ * que toca, se renombra en vez de insertar una columna nueva al lado.
+ */
+const RENOMBRES_COLUMNA = {
+  'Tiempo': ['Tiempo (min)']
+};
 
 /**
  * Si el mecánico debe apuntar también los repuestos y su precio.
@@ -696,7 +704,7 @@ function filasPartes_() {
       fecha: aFecha_(f[P.fecha]) || aFecha_(f[P.timestamp]) || new Date(0),
       horaInicio: textoHora_(f[P.horaInicio]),
       horaFin: textoHora_(f[P.horaFin]),
-      tiempoMin: numeroDesde_(f[P.tiempoMin]),
+      tiempoMin: minutosDeCelda_(f[P.tiempoMin]),
       matricula: normalizarMatricula_(f[P.matricula]),
       marca: String(f[P.marca] || '').trim(),
       modelo: String(f[P.modelo] || '').trim(),
@@ -772,6 +780,26 @@ function minutosTrabajados_(horaInicio, horaFin) {
   return fin >= ini ? fin - ini : (fin + 1440) - ini;
 }
 
+
+/**
+ * El tiempo tal como se guarda en la celda: fracción de día, que es lo que
+ * Sheets entiende por duración. Así la columna se ve como 3:59 y se puede
+ * sumar y promediar con SUM y AVERAGE sin convertir nada.
+ */
+function duracionCelda_(horaInicio, horaFin) {
+  const min = minutosTrabajados_(horaInicio, horaFin);
+  return min === '' ? '' : min / 1440;
+}
+
+/**
+ * De la celda a minutos. Acepta las dos formas: la fracción de día de ahora
+ * y los minutos sueltos que se guardaban en la primera versión.
+ */
+function minutosDeCelda_(v) {
+  const n = numeroDesde_(v);
+  if (!n) return 0;
+  return n < 1 ? Math.round(n * 1440) : Math.round(n);
+}
 /**
  * Deja una hora en HH:mm. El Sheet devuelve unas veces texto y otras un
  * Date de 1899, según cómo esté formateada la celda.
@@ -941,7 +969,7 @@ function guardarParte(d) {
     fila[P.fecha] = fecha;
     fila[P.horaInicio] = horaInicio;
     fila[P.horaFin] = horaFin;
-    fila[P.tiempoMin] = minutosTrabajados_(horaInicio, horaFin);
+    fila[P.tiempoMin] = duracionCelda_(horaInicio, horaFin);
     fila[P.matricula] = formatearMatricula_(clave);
     fila[P.marca] = String(d.marca || '').trim();
     fila[P.modelo] = String(d.modelo || '').trim();
@@ -1157,17 +1185,16 @@ function generarHojaTaller(id) {
   }
 }
 
-/** 239 -> "3 h 59 min"; 45 -> "45 min". */
+/** 239 -> "3:59"; 45 -> "0:45". Mismo formato que la columna de la hoja. */
 function duracionTexto_(min) {
   const n = Number(min || 0);
   if (!n) return '';
   const h = Math.floor(n / 60);
   const m = n % 60;
-  if (!h) return m + ' min';
-  return h + ' h' + (m ? ' ' + m + ' min' : '');
+  return h + ':' + ('0' + m).slice(-2);
 }
 
-/** "09:30 - 11:00 (1 h 30 min)", o sólo una hora si falta la otra. */
+/** "09:30 - 11:00 (1:30)", o sólo una hora si falta la otra. */
 function horario_(p) {
   if (p.horaInicio && p.horaFin) {
     const dur = duracionTexto_(p.tiempoMin || minutosTrabajados_(p.horaInicio, p.horaFin));
@@ -1517,6 +1544,11 @@ function alinearCabecera_(h) {
     const esperada = norm_(CABECERA_PARTES[i]);
     if (norm_(actual[i] || '') === esperada) continue;
 
+    // Puede que la columna exista pero con su nombre antiguo: entonces no se
+    // inserta nada, sólo se renombra al reescribir la cabecera al final.
+    const antiguos = RENOMBRES_COLUMNA[CABECERA_PARTES[i]] || [];
+    if (antiguos.some(function (v) { return norm_(v) === norm_(actual[i] || ''); })) continue;
+
     const yaEsta = actual.some(function (c) { return norm_(c) === esperada; });
     if (yaEsta) continue;   // está más adelante; encajará sola al insertar antes
 
@@ -1530,8 +1562,9 @@ function alinearCabecera_(h) {
 }
 
 /**
- * Calcula el tiempo de las fichas que se guardaron antes de que existiera la
- * columna. Sólo toca las que tienen las dos horas y el tiempo en blanco.
+ * Deja la columna de tiempo lista en las fichas ya guardadas: calcula el de
+ * las que no lo tienen, y convierte a duración las que se guardaron con
+ * minutos sueltos, cuando la columna aún se llamaba "Tiempo (min)".
  */
 function rellenarTiempos_(h) {
   const filas = h.getLastRow() - 1;
@@ -1542,10 +1575,19 @@ function rellenarTiempos_(h) {
   var tocadas = 0;
 
   for (var i = 0; i < datos.length; i++) {
-    if (datos[i][2] !== '' && datos[i][2] !== null) continue;
-    const min = minutosTrabajados_(datos[i][0], datos[i][1]);
-    if (min === '') continue;
-    datos[i][2] = min;
+    const actual = datos[i][2];
+    const vacio = actual === '' || actual === null;
+
+    // Un valor de 1 o más son minutos de la versión anterior: 239 significaba
+    // 239 minutos, no 239 días.
+    if (!vacio && numeroDesde_(actual) < 1) continue;
+
+    const nuevo = vacio
+      ? duracionCelda_(datos[i][0], datos[i][1])
+      : numeroDesde_(actual) / 1440;
+    if (nuevo === '' || !nuevo) continue;
+
+    datos[i][2] = nuevo;
     tocadas++;
   }
 
@@ -1575,7 +1617,7 @@ function prepararHojas() {
   h.getRange(2, P.revisiones + 1, filas, 1).setWrap(true);
   h.getRange(2, P.repuestos + 1, filas, 1).setWrap(true);
   h.getRange(2, P.costeRepuestos + 1, filas, 1).setNumberFormat('#,##0.00 €');
-  h.getRange(2, P.tiempoMin + 1, filas, 1).setNumberFormat('0 "min"');
+  h.getRange(2, P.tiempoMin + 1, filas, 1).setNumberFormat('[h]:mm');
 
   actualizarProductividad();
 
