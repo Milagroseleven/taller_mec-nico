@@ -85,18 +85,23 @@
       revisión que le hayas hecho a la moto, una por una.</p>
     <ul class="revisiones" id="listaRev"></ul>
 
-    <label>Repuestos comprados <span class="opcional">Opcional</span></label>
-    <div class="rep-alta">
-      <input type="text" id="repTexto" placeholder="Ej. Pastillas de freno"
-             autocomplete="off">
-      <input type="text" id="repCoste" class="importe" placeholder="0,00"
-             inputmode="decimal" autocomplete="off">
-      <button type="button" id="btnAddRep">Añadir</button>
+    <!-- Sólo se muestra si el mecánico debe apuntar también los repuestos.
+         Ver REPUESTOS_MECANICO en Code.gs. -->
+    <div id="bloqueRepuestos" class="oculto">
+
+      <label>Repuestos comprados <span class="opcional">Opcional</span></label>
+      <div class="rep-alta">
+        <input type="text" id="repTexto" placeholder="Ej. Pastillas de freno"
+               autocomplete="off">
+        <input type="text" id="repCoste" class="importe" placeholder="0,00"
+               inputmode="decimal" autocomplete="off">
+        <button type="button" id="btnAddRep">Añadir</button>
+      </div>
+      <p class="hint">Si has comprado alguna pieza para esta moto, apúntala con su
+        precio en euros. Si no ha hecho falta ninguna, deja esto vacío.</p>
+      <ul class="revisiones" id="listaRep"></ul>
+      <div class="total-rep oculto" id="totalRep"></div>
     </div>
-    <p class="hint">Si has comprado alguna pieza para esta moto, apúntala con su
-      precio en euros. Si no ha hecho falta ninguna, deja esto vacío.</p>
-    <ul class="revisiones" id="listaRep"></ul>
-    <div class="total-rep oculto" id="totalRep"></div>
 
     <label>Foto de la moto <span class="req">*</span></label>
     <div class="foto-btns">
@@ -157,6 +162,10 @@
   var CFG = null;
   var revisiones = [];
   var repuestos = [];         // [{descripcion, coste}]
+
+  // Lo decide el servidor segun REPUESTOS_MECANICO y el parametro ?repuestos
+  // de la URL, para poder enseñar las dos versiones con el mismo despliegue.
+  var PEDIR_REPUESTOS = <?!= JSON.stringify(pedirRepuestos) ?>;
   var foto = null;            // { nombre, tipo, datos, preview }
   var estadoSel = '';
   var datosMoto = null;       // última respuesta de consultarMatricula
@@ -227,6 +236,7 @@
       selS.appendChild(o);
     });
 
+    if (PEDIR_REPUESTOS) ver('bloqueRepuestos');
     pintarEstados(cfg.ejesEstado);
     el('fecha').value = cfg.hoy;
 

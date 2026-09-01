@@ -144,6 +144,18 @@ const P = {
 /** Separador entre la pieza y su importe dentro de la celda de repuestos. */
 const SEP_REPUESTO = ' — ';
 
+/**
+ * Si el mecánico debe apuntar también los repuestos y su precio.
+ *
+ * Por defecto NO: el mecánico sabe qué pieza ha montado, pero no lo que
+ * costó —eso lo sabe quien la pide—, así que pedirle el importe sólo
+ * produce ceros y cifras inventadas.
+ *
+ * Se puede ver la otra opción sin tocar nada añadiendo `&repuestos=si` a
+ * la URL del formulario, para poder enseñar las dos y decidir.
+ */
+const REPUESTOS_MECANICO = false;
+
 /** Texto que se muestra cuando la moto todavía no está en el maestro. */
 const SIN_MAESTRO = 'Ingreso pdte. en maestro';
 
@@ -771,6 +783,9 @@ function doGet(e) {
   // Sólo letras, números y espacios: el valor se imprime dentro del <script>
   // de la plantilla y no debe poder cerrar la etiqueta.
   t.matriculaInicial = String(p.m || '').replace(/[^A-Za-z0-9 ]/g, '').slice(0, 20);
+  // El jefe puede comparar las dos versiones sin desplegar dos veces.
+  t.pedirRepuestos = norm_(p.repuestos) === 'si' ? true :
+                     norm_(p.repuestos) === 'no' ? false : REPUESTOS_MECANICO;
   t.urlBase = urlApp_();
   return t.evaluate()
     .setTitle('Revisiones de Taller · Motick')
