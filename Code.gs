@@ -482,7 +482,6 @@ function maestro_() {
   if (cacheado) { _maestro = cacheado; return _maestro; }
 
   const hoja = hojaMaestro_();
-  const hoja = hojaMaestro_();
   const enc = encabezadosMaestro_(hoja);
   const cols = enc.cols;
   const primera = enc.fila + 2;
