@@ -56,6 +56,9 @@ Revisiones → Repuestos → Foto → Estado → Fecha de revisión → Hora ini
   descripción e importe, uno a uno, con el total calculado solo. Es opcional —
   hay revisiones que no gastan nada— y se guarda en dos columnas: el detalle en
   texto y el total como número, para poder sumarlo en la hoja.
+- **El tiempo invertido se calcula solo** en la hoja, a partir de la hora de
+  inicio y la de fin, en minutos. Se guarda como número para poder promediarlo,
+  y en la hoja de taller y en la vista de equipo se muestra legible («3 h 59 min»).
 
 ### Estado de motos
 
@@ -170,8 +173,9 @@ columnas usó, la lista completa de mecánicos con su sede y quién quedó exclu
 
 ### Pestaña `Fichas`
 
-`ID · Timestamp · Fecha revisión · Hora inicio · Hora fin · Matrícula · Marca ·
-Modelo · Año · Sede · Mecánico · Estado · Revisiones · Nº revisiones ·
+`ID · Timestamp · Fecha revisión · Hora inicio · Hora fin ·
+Tiempo (min) · Matrícula · Marca · Modelo · Año · Sede · Mecánico · Estado ·
+Revisiones · Nº revisiones ·
 Repuestos · Coste repuestos · URL foto`
 
 ### Pestaña `Productividad`

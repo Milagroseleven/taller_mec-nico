@@ -128,17 +128,17 @@ const SUBAREA_TALLER = 'taller';
 const PUESTOS_EXCLUIDOS = ['supervisor', 'auxiliar'];
 
 const CABECERA_PARTES = [
-  'ID', 'Timestamp', 'Fecha revisión', 'Hora inicio', 'Hora fin', 'Matrícula',
-  'Marca', 'Modelo', 'Año', 'Sede', 'Mecánico', 'Estado', 'Revisiones',
-  'Nº revisiones', 'Repuestos', 'Coste repuestos', 'URL foto'
+  'ID', 'Timestamp', 'Fecha revisión', 'Hora inicio', 'Hora fin', 'Tiempo (min)',
+  'Matrícula', 'Marca', 'Modelo', 'Año', 'Sede', 'Mecánico', 'Estado',
+  'Revisiones', 'Nº revisiones', 'Repuestos', 'Coste repuestos', 'URL foto'
 ];
 
 /** Posición de cada campo en la fila, para no contar índices a mano. */
 const P = {
-  id: 0, timestamp: 1, fecha: 2, horaInicio: 3, horaFin: 4, matricula: 5,
-  marca: 6, modelo: 7, anio: 8, sede: 9, mecanico: 10, estado: 11,
-  revisiones: 12, nRevisiones: 13, repuestos: 14, costeRepuestos: 15,
-  urlFoto: 16
+  id: 0, timestamp: 1, fecha: 2, horaInicio: 3, horaFin: 4, tiempoMin: 5,
+  matricula: 6, marca: 7, modelo: 8, anio: 9, sede: 10, mecanico: 11,
+  estado: 12, revisiones: 13, nRevisiones: 14, repuestos: 15,
+  costeRepuestos: 16, urlFoto: 17
 };
 
 /** Separador entre la pieza y su importe dentro de la celda de repuestos. */
@@ -696,6 +696,7 @@ function filasPartes_() {
       fecha: aFecha_(f[P.fecha]) || aFecha_(f[P.timestamp]) || new Date(0),
       horaInicio: textoHora_(f[P.horaInicio]),
       horaFin: textoHora_(f[P.horaFin]),
+      tiempoMin: numeroDesde_(f[P.tiempoMin]),
       matricula: normalizarMatricula_(f[P.matricula]),
       marca: String(f[P.marca] || '').trim(),
       modelo: String(f[P.modelo] || '').trim(),
@@ -749,6 +750,26 @@ function repuestosDeTexto_(texto) {
         coste: numeroDesde_(linea.substring(corte + SEP_REPUESTO.length))
       };
     });
+}
+
+/** "HH:mm" -> minutos desde medianoche. Devuelve null si no se entiende. */
+function minutosDeHora_(v) {
+  const t = textoHora_(v);
+  if (!t) return null;
+  const p = t.split(':');
+  return Number(p[0]) * 60 + Number(p[1]);
+}
+
+/**
+ * Minutos entre la hora de inicio y la de fin. Si la de fin es menor se
+ * entiende que el trabajo cruzó la medianoche y se suma el día entero.
+ * Devuelve '' cuando falta alguna de las dos, para no inventar un cero.
+ */
+function minutosTrabajados_(horaInicio, horaFin) {
+  const ini = minutosDeHora_(horaInicio);
+  const fin = minutosDeHora_(horaFin);
+  if (ini === null || fin === null) return '';
+  return fin >= ini ? fin - ini : (fin + 1440) - ini;
 }
 
 /**
@@ -920,6 +941,7 @@ function guardarParte(d) {
     fila[P.fecha] = fecha;
     fila[P.horaInicio] = horaInicio;
     fila[P.horaFin] = horaFin;
+    fila[P.tiempoMin] = minutosTrabajados_(horaInicio, horaFin);
     fila[P.matricula] = formatearMatricula_(clave);
     fila[P.marca] = String(d.marca || '').trim();
     fila[P.modelo] = String(d.modelo || '').trim();
@@ -1020,6 +1042,7 @@ function listarPartes() {
         id: p.id,
         fecha: fechaCorta_(p.fecha),
         horario: horario_(p),
+        tiempoMin: p.tiempoMin,
         matricula: formatearMatricula_(p.matricula),
         marca:  p.marca  || SIN_MAESTRO,
         modelo: p.modelo || SIN_MAESTRO,
@@ -1134,9 +1157,22 @@ function generarHojaTaller(id) {
   }
 }
 
-/** "09:30 - 11:00", o sólo una de las dos si falta la otra. */
+/** 239 -> "3 h 59 min"; 45 -> "45 min". */
+function duracionTexto_(min) {
+  const n = Number(min || 0);
+  if (!n) return '';
+  const h = Math.floor(n / 60);
+  const m = n % 60;
+  if (!h) return m + ' min';
+  return h + ' h' + (m ? ' ' + m + ' min' : '');
+}
+
+/** "09:30 - 11:00 (1 h 30 min)", o sólo una hora si falta la otra. */
 function horario_(p) {
-  if (p.horaInicio && p.horaFin) return p.horaInicio + ' - ' + p.horaFin;
+  if (p.horaInicio && p.horaFin) {
+    const dur = duracionTexto_(p.tiempoMin || minutosTrabajados_(p.horaInicio, p.horaFin));
+    return p.horaInicio + ' - ' + p.horaFin + (dur ? '  (' + dur + ')' : '');
+  }
   if (p.horaInicio) return 'desde ' + p.horaInicio;
   if (p.horaFin) return 'hasta ' + p.horaFin;
   return '';
@@ -1451,27 +1487,103 @@ function letraColumna_(idx) {
 // ---------------------------------------------------------------------
 
 /** Crea las dos pestañas con su formato. Ejecutar una vez tras instalar. */
+/**
+ * Pone la cabecera al día sin descolocar lo ya guardado.
+ *
+ * Cuando una versión nueva añade columnas, no basta con reescribir la fila 1:
+ * las fichas antiguas se quedarían con sus datos corridos. Así que se busca
+ * cada columna esperada por su nombre y, si no está, se **inserta** en su
+ * sitio, con lo que Sheets desplaza también los datos de todas las filas.
+ *
+ * Reconoce columnas añadidas, que es el caso real. Un cambio de nombre de una
+ * columna que ya existe hay que hacerlo a mano: aquí se vería como una columna
+ * nueva y se insertaría otra al lado.
+ *
+ * Devuelve los nombres de las columnas que ha tenido que crear.
+ */
+function alinearCabecera_(h) {
+  const ancho = Math.max(h.getLastColumn(), 1);
+  var actual = h.getRange(1, 1, 1, ancho).getValues()[0]
+    .map(function (v) { return String(v == null ? '' : v).trim(); });
+
+  // Hoja recién creada: se escribe la cabecera y ya está.
+  if (actual.join('') === '') {
+    h.getRange(1, 1, 1, CABECERA_PARTES.length).setValues([CABECERA_PARTES]);
+    return [];
+  }
+
+  const creadas = [];
+  for (var i = 0; i < CABECERA_PARTES.length; i++) {
+    const esperada = norm_(CABECERA_PARTES[i]);
+    if (norm_(actual[i] || '') === esperada) continue;
+
+    const yaEsta = actual.some(function (c) { return norm_(c) === esperada; });
+    if (yaEsta) continue;   // está más adelante; encajará sola al insertar antes
+
+    h.insertColumnBefore(i + 1);
+    actual.splice(i, 0, CABECERA_PARTES[i]);
+    creadas.push(CABECERA_PARTES[i]);
+  }
+
+  h.getRange(1, 1, 1, CABECERA_PARTES.length).setValues([CABECERA_PARTES]);
+  return creadas;
+}
+
+/**
+ * Calcula el tiempo de las fichas que se guardaron antes de que existiera la
+ * columna. Sólo toca las que tienen las dos horas y el tiempo en blanco.
+ */
+function rellenarTiempos_(h) {
+  const filas = h.getLastRow() - 1;
+  if (filas < 1) return 0;
+
+  const rango = h.getRange(2, P.horaInicio + 1, filas, 3);   // inicio, fin, tiempo
+  const datos = rango.getValues();
+  var tocadas = 0;
+
+  for (var i = 0; i < datos.length; i++) {
+    if (datos[i][2] !== '' && datos[i][2] !== null) continue;
+    const min = minutosTrabajados_(datos[i][0], datos[i][1]);
+    if (min === '') continue;
+    datos[i][2] = min;
+    tocadas++;
+  }
+
+  if (tocadas) rango.setValues(datos);
+  return tocadas;
+}
+
 function prepararHojas() {
   const ss = libro_();
   var h = ss.getSheetByName(HOJA_PARTES);
   if (!h) h = ss.insertSheet(HOJA_PARTES);
 
-  // La cabecera se reescribe siempre, no sólo al crearla: así una versión
-  // nueva que añada columnas deja la hoja al día con volver a ejecutar esto.
-  h.getRange(1, 1, 1, CABECERA_PARTES.length).setValues([CABECERA_PARTES]);
+  // Inserta las columnas que falten, desplazando los datos ya guardados, y
+  // calcula el tiempo de las fichas anteriores a esa columna.
+  const creadas = alinearCabecera_(h);
+  const tiempos = rellenarTiempos_(h);
+
   h.getRange(1, 1, 1, CABECERA_PARTES.length)
     .setFontWeight('bold').setBackground('#1f2a37').setFontColor('#ffffff');
   h.setFrozenRows(1);
 
-  const anchos = [150, 145, 105, 95, 90, 100, 110, 150, 60, 100, 160, 120, 420, 95, 300, 120, 230];
+  const anchos = [150, 145, 105, 95, 90, 100, 110, 110, 150, 60,
+                  100, 160, 120, 420, 95, 300, 120, 230];
   anchos.forEach(function (w, i) { h.setColumnWidth(i + 1, w); });
-  h.getRange(2, P.revisiones + 1, Math.max(h.getMaxRows() - 1, 1), 1).setWrap(true);
-  h.getRange(2, P.repuestos + 1, Math.max(h.getMaxRows() - 1, 1), 1).setWrap(true);
-  h.getRange(2, P.costeRepuestos + 1, Math.max(h.getMaxRows() - 1, 1), 1)
-    .setNumberFormat('#,##0.00 €');
+
+  const filas = Math.max(h.getMaxRows() - 1, 1);
+  h.getRange(2, P.revisiones + 1, filas, 1).setWrap(true);
+  h.getRange(2, P.repuestos + 1, filas, 1).setWrap(true);
+  h.getRange(2, P.costeRepuestos + 1, filas, 1).setNumberFormat('#,##0.00 €');
+  h.getRange(2, P.tiempoMin + 1, filas, 1).setNumberFormat('0 "min"');
 
   actualizarProductividad();
-  return 'Hojas "' + HOJA_PARTES + '" y "' + HOJA_PRODUCTIVIDAD + '" listas.';
+
+  var resumen = 'Hojas "' + HOJA_PARTES + '" y "' + HOJA_PRODUCTIVIDAD + '" listas.';
+  if (creadas.length) resumen += ' Columnas añadidas: ' + creadas.join(', ') + '.';
+  if (tiempos) resumen += ' Tiempo calculado en ' + tiempos + ' ficha(s) anteriores.';
+  console.log(resumen);
+  return resumen;
 }
 
 /**
