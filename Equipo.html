@@ -10,7 +10,7 @@
 
   <div class="card">
     <h1>Estado de motos</h1>
-    <p class="sub">Todas las revisiones de taller, de la más reciente a la más antigua.
+    <p class="sub">Todas las fichas de taller, de la más reciente a la más antigua.
       Toca una fila para ver el detalle.</p>
 
     <div class="barra">
@@ -27,7 +27,7 @@
   <div class="card" style="padding:0; overflow:hidden">
     <div id="cargando" class="centro" style="padding:30px">
       <div class="cargador"></div>
-      <p class="sub" style="margin:0">Cargando partes…</p>
+      <p class="sub" style="margin:0">Cargando fichas…</p>
     </div>
 
     <div id="error" class="aviso rojo oculto" style="margin:16px"></div>
@@ -41,7 +41,7 @@
       </table>
     </div>
 
-    <div id="vacio" class="vacio oculto">No hay partes que coincidan con la búsqueda.</div>
+    <div id="vacio" class="vacio oculto">No hay fichas que coincidan con la búsqueda.</div>
   </div>
 
   <span class="enlace-suelto" id="linkForm">Ir al formulario del mecánico</span>
@@ -78,7 +78,7 @@
   ];
 
   /** Mismo texto que usa el servidor cuando la moto no está en el maestro. */
-  var SIN_MAESTRO = 'Ingreso pdte';
+  var SIN_MAESTRO = 'Ingreso pdte. en maestro';
 
   var TODOS = [];
   var filtros = {};
@@ -120,7 +120,7 @@
 
     if (!r || !r.ok) {
       var caja = el('error');
-      caja.textContent = (r && r.error) || 'No se han podido cargar los partes.';
+      caja.textContent = (r && r.error) || 'No se han podido cargar las fichas.';
       caja.classList.remove('oculto');
       return;
     }
@@ -264,7 +264,7 @@
     cuerpo.innerHTML = '';
 
     el('contador').textContent = filas.length +
-      (filas.length === 1 ? ' parte' : ' partes') +
+      (filas.length === 1 ? ' ficha' : ' fichas') +
       (filas.length !== TODOS.length ? ' de ' + TODOS.length : '');
 
     el('cajaTabla').classList.toggle('oculto', filas.length === 0);

@@ -48,9 +48,43 @@ const CARPETA_NOMBRE = 'Revisiones Taller - Fotos';
 const LOGO_ID = '';
 
 const SEDES = ['Barcelona', 'Madrid', 'Sevilla', 'Valencia'];
-const ESTADOS = ['Pendiente', 'Completado', 'Incidencia', 'Mantenimiento'];
 
-const HOJA_PARTES = 'Partes';
+/**
+ * Los cuatro estados que eligen los mecánicos, agrupados por lo que
+ * significan de verdad.
+ *
+ * "Pendiente / Completado" dice en qué punto está el trabajo, y
+ * "Incidencia / Mantenimiento" de qué trabajo se trata: son dos ejes
+ * distintos, y una moto puede ser las dos cosas a la vez. Se mantienen en un
+ * único campo a petición del jefe de taller, para no cambiarle el hábito a
+ * los mecánicos de golpe.
+ *
+ * Mientras tanto, la agrupación correcta vive aquí: el formulario la usa
+ * para separar visualmente los dos pares, y el día que se decida partirlo en
+ * dos campos, la información ya está modelada y no hay que redescubrirla.
+ */
+const EJES_ESTADO = [
+  { eje: 'avance', etiqueta: 'Estado del trabajo', opciones: ['Pendiente', 'Completado'] },
+  { eje: 'tipo',   etiqueta: 'Tipo de trabajo',    opciones: ['Incidencia', 'Mantenimiento'] }
+];
+
+/** Lista plana, que es como se guarda hoy en la hoja. */
+const ESTADOS = EJES_ESTADO.reduce(function (todos, g) {
+  return todos.concat(g.opciones);
+}, []);
+
+/** Devuelve a qué eje pertenece un estado. Útil para los indicadores. */
+function ejeDelEstado_(estado) {
+  for (var i = 0; i < EJES_ESTADO.length; i++) {
+    if (EJES_ESTADO[i].opciones.indexOf(estado) !== -1) return EJES_ESTADO[i].eje;
+  }
+  return '';
+}
+
+
+const HOJA_PARTES = 'Fichas';
+/** Nombre anterior de esa pestaña: si aparece, se renombra sin perder datos. */
+const HOJA_PARTES_ANTIGUA = 'Partes';
 const HOJA_PRODUCTIVIDAD = 'Productividad';
 
 /**
@@ -107,7 +141,7 @@ const P = {
 };
 
 /** Texto que se muestra cuando la moto todavía no está en el maestro. */
-const SIN_MAESTRO = 'Ingreso pdte';
+const SIN_MAESTRO = 'Ingreso pdte. en maestro';
 
 // ---------------------------------------------------------------------
 // UTILIDADES
@@ -205,7 +239,7 @@ function libro_() {
   if (!activa) {
     throw new Error(
       'No hay hoja de destino. Rellena HOJA_ID en la configuración de Code.gs ' +
-      'con el ID del Sheet donde deben guardarse los partes.'
+      'con el ID del Sheet donde deben guardarse las fichas.'
     );
   }
   return activa;
@@ -326,7 +360,10 @@ function indiceMaestro_(forzar) {
 
 /** Vacía el índice cacheado. Útil tras dar motos de alta en el maestro. */
 function limpiarCacheMaestro() {
-  CacheService.getScriptCache().removeAll(['maestro_meta', 'maestro_claves']);
+  const cache = CacheService.getScriptCache();
+  const claves = ['maestro_meta', 'maestro_claves', 'maestro_trozos'];
+  for (var i = 0; i < 40; i++) claves.push('maestro_t' + i);
+  cache.removeAll(claves);
   return 'Caché del maestro vaciada.';
 }
 
@@ -358,6 +395,80 @@ function motoDeMaestro_(clave) {
     km:     cols.km     === -1 ? '' : textoKm_(v[cols.km])
   };
 }
+/**
+ * El maestro completo, guardado en caché seis horas.
+ *
+ * Lo caro del maestro no son los datos, es abrir su libro: son 69 pestañas y
+ * casi 10 millones de celdas, y sólo pedir los metadatos cuesta más de un
+ * segundo y medio. Con la caché ese peaje lo paga la primera consulta del
+ * medio día y las demás se sirven de memoria.
+ *
+ * Como cada entrada del caché admite unos 100 KB y las 5.000 motos ocupan
+ * más, el texto se parte en trozos y se guardan juntos.
+ */
+const CACHE_TROZO = 90000;
+
+function serializarMaestro_(mapa) {
+  const lineas = [];
+  Object.keys(mapa).forEach(function (clave) {
+    const m = mapa[clave];
+    lineas.push([clave, m.marca, m.modelo, m.anio, m.km].join('\t'));
+  });
+  return lineas.join('\n');
+}
+
+function deserializarMaestro_(texto) {
+  const mapa = {};
+  texto.split('\n').forEach(function (linea) {
+    if (!linea) return;
+    const p = linea.split('\t');
+    mapa[p[0]] = {
+      marca: p[1] || '', modelo: p[2] || '', anio: p[3] || '', km: p[4] || ''
+    };
+  });
+  return mapa;
+}
+
+function maestroDesdeCache_() {
+  try {
+    const cache = CacheService.getScriptCache();
+    const n = Number(cache.get('maestro_trozos'));
+    if (!n) return null;
+
+    const claves = [];
+    for (var i = 0; i < n; i++) claves.push('maestro_t' + i);
+    const trozos = cache.getAll(claves);
+
+    var texto = '';
+    for (var j = 0; j < n; j++) {
+      const t = trozos['maestro_t' + j];
+      // Si un trozo ha caducado por su cuenta, la caché ya no sirve entera.
+      if (t == null) return null;
+      texto += t;
+    }
+    return deserializarMaestro_(texto);
+  } catch (err) {
+    return null;
+  }
+}
+
+function guardarMaestroEnCache_(mapa) {
+  try {
+    const texto = serializarMaestro_(mapa);
+    const trozos = {};
+    var n = 0;
+    for (var i = 0; i < texto.length; i += CACHE_TROZO) {
+      trozos['maestro_t' + n] = texto.substring(i, i + CACHE_TROZO);
+      n++;
+    }
+    const cache = CacheService.getScriptCache();
+    cache.putAll(trozos, CACHE_SEGUNDOS);
+    cache.put('maestro_trozos', String(n), CACHE_SEGUNDOS);
+  } catch (err) {
+    // Si no cabe se sigue funcionando, sólo que releyendo la hoja cada vez.
+    console.warn('No se pudo cachear el maestro: ' + err);
+  }
+}
 
 /**
  * Devuelve { MATRICULANORMALIZADA: {marca, modelo, anio, km} } con el maestro
@@ -367,6 +478,10 @@ function motoDeMaestro_(clave) {
 function maestro_() {
   if (_maestro) return _maestro;
 
+  const cacheado = maestroDesdeCache_();
+  if (cacheado) { _maestro = cacheado; return _maestro; }
+
+  const hoja = hojaMaestro_();
   const hoja = hojaMaestro_();
   const enc = encabezadosMaestro_(hoja);
   const cols = enc.cols;
@@ -403,6 +518,7 @@ function maestro_() {
       km:     textoKm_(celda(fila, cols.km))
     };
   }
+  guardarMaestroEnCache_(mapa);
   _maestro = mapa;
   return mapa;
 }
@@ -529,6 +645,17 @@ function personalTaller_() {
 function hojaPartes_() {
   const ss = libro_();
   var h = ss.getSheetByName(HOJA_PARTES);
+
+  if (!h) {
+    // La pestaña se llamaba "Partes". Si sigue ahí se renombra en vez de
+    // crear una nueva, para no dejar huérfanas las fichas ya registradas.
+    const anterior = ss.getSheetByName(HOJA_PARTES_ANTIGUA);
+    if (anterior) {
+      anterior.setName(HOJA_PARTES);
+      h = anterior;
+    }
+  }
+
   if (!h) {
     h = ss.insertSheet(HOJA_PARTES);
     h.getRange(1, 1, 1, CABECERA_PARTES.length).setValues([CABECERA_PARTES]);
@@ -537,7 +664,7 @@ function hojaPartes_() {
   return h;
 }
 
-/** Lee todos los partes ya tipados. Se usa en listados, PDF y métricas. */
+/** Lee todas las fichas ya tipadas. Se usa en listados, PDF y métricas. */
 function filasPartes_() {
   const datos = hojaPartes_().getDataRange().getValues();
   const salida = [];
@@ -619,6 +746,7 @@ function obtenerConfiguracionInicial() {
       mecanicos: mecanicos_(),
       sedes: SEDES,
       estados: ESTADOS,
+      ejesEstado: EJES_ESTADO,
       hoy: fechaISO_(new Date()),
       urlEquipo: urlApp_() + '?v=equipo'
     };
@@ -911,7 +1039,7 @@ function logoDataUri_() {
 function generarHojaTaller(id) {
   try {
     const parte = filasPartes_().filter(function (p) { return p.id === id; })[0];
-    if (!parte) throw new Error('No encuentro el parte ' + id + '.');
+    if (!parte) throw new Error('No encuentro la ficha ' + id + '.');
 
     var m = null;
     try { m = maestro_()[parte.matricula] || null; } catch (err) { m = null; }
@@ -1204,7 +1332,7 @@ function actualizarProductividad() {
   const nota = h.getRange(filas.length + 2, 1, 1, 8);
   nota.merge().setValue(
     'Esta pestaña se calcula sola con fórmulas sobre la hoja "' + HOJA_PARTES +
-    '". No hace falta actualizarla: cambia en cuanto entra o se corrige un parte. ' +
+    '". No hace falta actualizarla: cambia en cuanto entra o se corrige una ficha. ' +
     'La semana empieza en lunes.'
   );
   nota.setFontColor('#9ca3af').setFontSize(9).setWrap(true);
@@ -1261,9 +1389,9 @@ function diagnostico() {
   lineas.push('URL vista equipo   : ' + (url ? url + '?v=equipo' : '-'));
 
   try {
-    lineas.push('Hoja de partes     : OK -> ' + libro_().getName());
+    lineas.push('Hoja de fichas     : OK -> ' + libro_().getName());
   } catch (err) {
-    lineas.push('Hoja de partes     : ERROR -> ' + err.message);
+    lineas.push('Hoja de fichas     : ERROR -> ' + err.message);
   }
 
   try {

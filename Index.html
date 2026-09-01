@@ -129,7 +129,7 @@
   <!-- ---------- Guardado ---------- -->
   <div id="pOk" class="card centro oculto">
     <div class="tick">✓</div>
-    <h1>Parte guardado</h1>
+    <h1>Ficha guardada</h1>
     <p class="sub" id="okTexto"></p>
     <button id="btnOtra" class="primario">Registrar otra moto</button>
     <span class="enlace-suelto" id="linkEquipo2">Ver estado de motos</span>
@@ -213,7 +213,7 @@
       selS.appendChild(o);
     });
 
-    pintarEstados(cfg.estados);
+    pintarEstados(cfg.ejesEstado);
     el('fecha').value = cfg.hoy;
 
     el('linkEquipo1').onclick = irAEquipo;
@@ -232,20 +232,41 @@
     window.open(CFG.urlEquipo, '_blank');
   }
 
-  function pintarEstados(estados) {
+  /**
+   * Pinta los estados en dos grupos: avance del trabajo arriba, tipo de
+   * trabajo abajo. Para el mecánico son los mismos cuatro botones de siempre
+   * —la única diferencia es un poco más de aire entre las dos filas—, pero la
+   * separación real queda hecha en el HTML, con su eje marcado, para el día
+   * que se decidan a partirlo en dos campos.
+   */
+  function pintarEstados(ejes) {
     var cont = el('estados');
     cont.innerHTML = '';
-    estados.forEach(function (e) {
-      var d = document.createElement('div');
-      d.className = 'estado-op';
-      d.textContent = e;
-      d.onclick = function () {
-        estadoSel = e;
-        Array.prototype.forEach.call(cont.children, function (c) {
-          c.classList.toggle('sel', c === d);
-        });
-      };
-      cont.appendChild(d);
+
+    function marcarSeleccionado(elegido) {
+      Array.prototype.forEach.call(cont.querySelectorAll('.estado-op'), function (c) {
+        c.classList.toggle('sel', c === elegido);
+      });
+    }
+
+    ejes.forEach(function (g) {
+      var grupo = document.createElement('div');
+      grupo.className = 'estado-grupo';
+      grupo.setAttribute('data-eje', g.eje);
+      grupo.setAttribute('aria-label', g.etiqueta);
+
+      g.opciones.forEach(function (e) {
+        var d = document.createElement('div');
+        d.className = 'estado-op';
+        d.textContent = e;
+        d.onclick = function () {
+          estadoSel = e;
+          marcarSeleccionado(d);
+        };
+        grupo.appendChild(d);
+      });
+
+      cont.appendChild(grupo);
     });
   }
 
@@ -777,9 +798,8 @@
     ultimaConsultada = '';
     el('fileCamara').value = '';
     el('fileArchivo').value = '';
-    Array.prototype.forEach.call(el('estados').children, function (c) {
-      c.classList.remove('sel');
-    });
+    Array.prototype.forEach.call(el('estados').querySelectorAll('.estado-op'),
+      function (c) { c.classList.remove('sel'); });
     pintarRevisiones();
     pintarFoto();
     estadoConsulta('');

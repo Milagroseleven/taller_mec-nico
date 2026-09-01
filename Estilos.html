@@ -170,8 +170,13 @@
     border-radius: 8px; padding: 6px 11px; font-size: 13px; cursor: pointer;
   }
 
-  /* --- Estados ------------------------------------------------------- */
-  .estados { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  /* --- Estados -------------------------------------------------------
+     Los cuatro botones van en dos grupos: avance del trabajo y tipo de
+     trabajo. Para el mecánico siguen siendo los mismos cuatro de siempre;
+     lo único que los separa es un poco más de aire entre las filas, que se
+     lee como agrupación sin necesidad de explicar nada. */
+  .estados { display: flex; flex-direction: column; gap: 14px; }
+  .estado-grupo { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .estado-op {
     text-align: center; padding: 13px 6px;
     border: 1.5px solid #d5d9e0; border-radius: 10px;

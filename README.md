@@ -1,7 +1,7 @@
 # Revisiones de Taller · Motick
 
 Sustituye el reporte por WhatsApp. El mecánico registra desde el móvil la moto
-que acaba de revisar y el parte queda en el Sheet al instante, sin que nadie
+que acaba de revisar y la ficha queda en el Sheet al instante, sin que nadie
 tenga que copiar y pegar nada a Trello.
 
 Está montado sobre **Google Apps Script + Google Sheets**: sin servidores, sin
@@ -43,7 +43,7 @@ Fecha de revisión → Hora inicio/fin → **Vista previa** → *Guardar* / *Edi
   **sólo entonces** aparece un campo, el **modelo**, que es obligatorio. La marca
   no se pide: se rellenará cuando la moto se dé de alta en el maestro, que es
   donde le corresponde vivir. Hasta entonces la vista de equipo la muestra como
-  *Ingreso pdte*.
+  *Ingreso pdte. en maestro*.
 - **Si la moto ya pasó por taller**, sale un aviso con la última fecha y el
   mecánico que la atendió, y un enlace *Ver registro previo*. Nunca bloquea el
   alta.
@@ -54,11 +54,11 @@ Fecha de revisión → Hora inicio/fin → **Vista previa** → *Guardar* / *Edi
 
 ### Estado de motos
 
-La hoja `Partes` se reordena sola en cada alta, así que en el propio Google
+La hoja `Fichas` se reordena sola en cada alta, así que en el propio Google
 Sheet lo más reciente queda arriba. La vista de equipo hace lo mismo: listado de
 la más reciente a la más antigua con **Matrícula, Marca, Modelo, Año,
 Km, Estado, Sede, Responsable y Fecha**, más un botón **Hoja de taller** que
-genera el PDF del parte.
+genera el PDF de la ficha.
 
 - Buscador general sobre matrícula, marca, modelo, responsable y sede.
 - Desplegable de filtro en cada encabezado, combinables entre sí.
@@ -67,11 +67,11 @@ genera el PDF del parte.
 - **La tabla sale al instante y el maestro se cruza después.** Ese libro tiene 68
   pestañas y casi 10 millones de celdas: sólo abrirlo son 1,6 s medidos, y Apps
   Script es más lento que eso, así que la
-  vista no lo espera. Primero pinta los partes y luego actualiza marca, modelo,
+  vista no lo espera. Primero pinta las fichas y luego actualiza marca, modelo,
   año y km, que aparecen como «…» hasta que llegan.
-- **Año y Km salen siempre del maestro**, no del parte: son datos de la moto, no
+- **Año y Km salen siempre del maestro**, no de la ficha: son datos de la moto, no
   del trabajo de aquel día. Si la moto no está en el maestro, esas columnas
-  muestran *Ingreso pdte*.
+  muestran *Ingreso pdte. en maestro*.
 
 ---
 
@@ -90,7 +90,7 @@ Ya viene rellena con los recursos reales:
 
 | Constante | Apunta a |
 |---|---|
-| `HOJA_ID` | Sheet de registro donde se guardan los partes |
+| `HOJA_ID` | Sheet de registro donde se guardan las fichas |
 | `MAESTRO_ID` + `MAESTRO_HOJA` | Pestaña **Maestro** del libro *Maestro 2026* |
 | `MECANICOS_ID` + `MECANICOS_HOJA` | Pestaña **Vacaciones** del mismo libro |
 | `CARPETA_ID` | Carpeta de Drive para las fotos |
@@ -123,7 +123,7 @@ Encabezados en la **fila 4**. Verificado contra la hoja real: **4.996 motos**.
 
 Del año sólo se extrae el año (`24/10/2017` → `2017`) y los km se reformatean a
 un estilo único, porque en la hoja conviven `18116`, `7.134` y `19.000`. Faltan
-km en 21 motos y año en 5; ésas mostrarán *Ingreso pdte* en esas dos columnas.
+km en 21 motos y año en 5; ésas mostrarán *Ingreso pdte. en maestro* ahí.
 
 Como el maestro ronda las 5.000 filas y la consulta se dispara cada vez que un
 mecánico escribe una matrícula, **sólo se leen las cinco columnas necesarias**
@@ -136,7 +136,7 @@ Encabezados en la **fila 5**: `Nº | Nombres | Sub área | Puesto | Sede | …`
 El rótulo `TALLER` que hay suelto más abajo es sólo decorativo: **lo que
 identifica a un mecánico es la columna `Sub área` con el valor `Taller`**. El
 código busca la fila de encabezados, filtra por esa columna y descarta los
-puestos de `PUESTOS_EXCLUIDOS`: sólo firman partes quienes hacen la revisión con
+puestos de `PUESTOS_EXCLUIDOS`: sólo firman fichas quienes hacen la revisión con
 sus manos.
 
 Verificado contra la hoja real: de las 14 personas con sub área Taller quedan
@@ -163,15 +163,15 @@ columnas usó, la lista completa de mecánicos con su sede y quién quedó exclu
 
 ## Datos que genera
 
-### Pestaña `Partes`
+### Pestaña `Fichas`
 
 `ID · Timestamp · Fecha revisión · Hora inicio · Hora fin · Matrícula · Marca ·
 Modelo · Año · Sede · Mecánico · Estado · Revisiones · Nº revisiones · URL foto`
 
 ### Pestaña `Productividad`
 
-**Son fórmulas, no valores.** La pestaña se calcula sola sobre la hoja `Partes`:
-cambia en cuanto entra un parte nuevo, y también si alguien corrige uno a mano.
+**Son fórmulas, no valores.** La pestaña se calcula sola sobre la hoja `Fichas`:
+cambia en cuanto entra una ficha nueva, y también si alguien corrige una a mano.
 No hay nada que actualizar ni ningún proceso que pueda quedarse atrás.
 
 1. **Motos por mecánico** — hoy · esta semana · semana pasada · últimos 30 días ·
@@ -180,7 +180,7 @@ No hay nada que actualizar ni ningún proceso que pueda quedarse atrás.
 3. **Totales** — la fila de toda la empresa
 
 La semana empieza en lunes. Los nombres de los mecánicos salen solos de los
-partes registrados, así que **sólo aparece quien tenga al menos un parte**: hay
+fichas registradas, así que **sólo aparece quien tenga al menos una ficha**: hay
 sitio reservado para 30, de sobra para los 12 actuales.
 
 Son indicadores deliberadamente sencillos. Cuando exista el catálogo de
@@ -226,3 +226,20 @@ Equipo.html       Estado de motos
 Estilos.html      Estilos compartidos por las dos pantallas
 appsscript.json   Manifiesto: permisos y modo de publicación
 ```
+
+---
+
+## Nota sobre los cuatro estados
+
+`Pendiente / Completado` describe el avance del trabajo y
+`Incidencia / Mantenimiento` el tipo de trabajo: son dos ejes distintos, y una
+moto puede ser las dos cosas a la vez. Se mantienen en un solo campo a petición
+del jefe de taller, para no cambiarle el hábito a los mecánicos de golpe.
+
+Mientras tanto la agrupación correcta vive en `EJES_ESTADO` (`Code.gs`). El
+formulario la usa para separar los dos pares con algo más de aire entre las
+filas —para el mecánico siguen siendo los mismos cuatro botones— y cada grupo
+lleva su eje marcado en el HTML.
+
+Cuando se decida partirlo en dos campos, el modelo ya está hecho: basta añadir
+una columna a `CABECERA_PARTES` y dos guardados en `guardarParte`.
