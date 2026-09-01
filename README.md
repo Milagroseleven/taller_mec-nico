@@ -237,8 +237,8 @@ moto puede ser las dos cosas a la vez. Se mantienen en un solo campo a petición
 del jefe de taller, para no cambiarle el hábito a los mecánicos de golpe.
 
 Mientras tanto la agrupación correcta vive en `EJES_ESTADO` (`Code.gs`). El
-formulario la usa para separar los dos pares con algo más de aire entre las
-filas —para el mecánico siguen siendo los mismos cuatro botones— y cada grupo
+formulario la usa para dar a cada par una barrita de color distinta en el borde
+izquierdo —misma rejilla 2×2, mismo tamaño, sin texto que aprender— y cada botón
 lleva su eje marcado en el HTML.
 
 Cuando se decida partirlo en dos campos, el modelo ya está hecho: basta añadir

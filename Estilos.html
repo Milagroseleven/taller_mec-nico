@@ -171,18 +171,28 @@
   }
 
   /* --- Estados -------------------------------------------------------
-     Los cuatro botones van en dos grupos: avance del trabajo y tipo de
-     trabajo. Para el mecánico siguen siendo los mismos cuatro de siempre;
-     lo único que los separa es un poco más de aire entre las filas, que se
-     lee como agrupación sin necesidad de explicar nada. */
-  .estados { display: flex; flex-direction: column; gap: 14px; }
-  .estado-grupo { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+     Rejilla 2×2 de siempre: fila de arriba el avance del trabajo, fila de
+     abajo el tipo de trabajo.
+
+     Los dos pares se distinguen por una barrita de 3 px en el borde
+     izquierdo, en dos tonos apagados. Es suficiente para que se lean como
+     dos grupos y lo bastante discreto como para que un mecánico no tenga
+     que preguntarse qué significa: no ocupa espacio, no cambia el tamaño de
+     los botones y no añade ningún texto que aprender. */
+  .estados { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .estado-op {
     text-align: center; padding: 13px 6px;
     border: 1.5px solid #d5d9e0; border-radius: 10px;
     font-size: 14.5px; font-weight: 600; color: #374151; cursor: pointer;
   }
+  .estado-op[data-eje="avance"] { border-left: 3px solid #b7c4d4; }  /* azulado */
+  .estado-op[data-eje="tipo"]   { border-left: 3px solid #d8c9ac; }  /* arena  */
+
+  /* Al seleccionarlo se pone oscuro, pero la barrita se mantiene: así el
+     grupo sigue reconociéndose también en el que está marcado. */
   .estado-op.sel { background: #1f2a37; border-color: #1f2a37; color: #fff; }
+  .estado-op.sel[data-eje="avance"] { border-left-color: #b7c4d4; }
+  .estado-op.sel[data-eje="tipo"]   { border-left-color: #d8c9ac; }
 
   /* --- Resumen de vista previa --------------------------------------- */
   .resumen-mat { font-size: 26px; font-weight: 800; letter-spacing: 2px; }

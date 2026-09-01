@@ -233,40 +233,33 @@
   }
 
   /**
-   * Pinta los estados en dos grupos: avance del trabajo arriba, tipo de
-   * trabajo abajo. Para el mecánico son los mismos cuatro botones de siempre
-   * —la única diferencia es un poco más de aire entre las dos filas—, pero la
-   * separación real queda hecha en el HTML, con su eje marcado, para el día
-   * que se decidan a partirlo en dos campos.
+   * Pinta los cuatro estados en la misma rejilla 2×2 de siempre.
+   *
+   * Cada botón lleva marcado su eje —avance del trabajo o tipo de trabajo—,
+   * que los estilos traducen en una barrita de color distinta en el borde
+   * izquierdo. Lo justo para que los dos pares se lean como dos grupos sin
+   * que el mecánico tenga que aprender nada nuevo, y con la separación real
+   * ya hecha en el HTML para cuando se parta en dos campos.
    */
   function pintarEstados(ejes) {
     var cont = el('estados');
     cont.innerHTML = '';
 
-    function marcarSeleccionado(elegido) {
-      Array.prototype.forEach.call(cont.querySelectorAll('.estado-op'), function (c) {
-        c.classList.toggle('sel', c === elegido);
-      });
-    }
-
     ejes.forEach(function (g) {
-      var grupo = document.createElement('div');
-      grupo.className = 'estado-grupo';
-      grupo.setAttribute('data-eje', g.eje);
-      grupo.setAttribute('aria-label', g.etiqueta);
-
       g.opciones.forEach(function (e) {
         var d = document.createElement('div');
         d.className = 'estado-op';
+        d.setAttribute('data-eje', g.eje);
+        d.title = g.etiqueta;
         d.textContent = e;
         d.onclick = function () {
           estadoSel = e;
-          marcarSeleccionado(d);
+          Array.prototype.forEach.call(cont.children, function (c) {
+            c.classList.toggle('sel', c === d);
+          });
         };
-        grupo.appendChild(d);
+        cont.appendChild(d);
       });
-
-      cont.appendChild(grupo);
     });
   }
 
